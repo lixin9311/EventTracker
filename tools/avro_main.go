@@ -1,9 +1,9 @@
 package main
 
 import (
-	"./avro"
 	"bytes"
 	"fmt"
+	"github.com/lixin9311/EventTracker/avro"
 	"log"
 	//	"strconv"
 )

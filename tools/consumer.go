@@ -1,9 +1,9 @@
 package main
 
 import (
-	"./avro"
 	"bytes"
 	"github.com/Shopify/sarama"
+	"github.com/lixin9311/EventTracker/avro"
 	"log"
 	"os"
 	"os/signal"
