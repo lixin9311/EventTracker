@@ -1,0 +1,15 @@
+{
+    "main" : {
+        "logfile" : "tracker.log",
+        "port" : "8080"
+    },
+    "kafka" : {
+        "brokers" : "localhost:9092",
+        "topic" : "test",
+        "partitioner" : "hash",
+        "partition" : "-1"
+    },
+    "avro" : {
+        "schema" : "event.avsc"
+    }
+}
