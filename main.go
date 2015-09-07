@@ -150,9 +150,9 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 		counter++
 	}
 	// done
-	logger.Printf("%d messages have been writen", counter)
+	logger.Printf("%d messages have been writen.", counter)
 	w.WriteHeader(200)
-	fmt.Fprintf(w, "%d messages have been writen", counter)
+	fmt.Fprintf(w, "%d messages have been writen.", counter)
 }
 
 // EventHandler is the REST api handler
@@ -219,7 +219,7 @@ func EventHandler(w http.ResponseWriter, r *http.Request) {
 	// done
 	logger.Printf("New record partition=%d\toffset=%d\n", part, offset)
 	w.WriteHeader(200)
-	fmt.Fprintf(w, "partition=%d&offset=%d", part, offset)
+	fmt.Fprintf(w, "1 messages have been writen.")
 }
 
 func init() {
