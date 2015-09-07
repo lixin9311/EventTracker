@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 )
 
 var (
@@ -26,7 +27,7 @@ var (
 	conf          *config.Config
 	configFile    = flag.String("c", "config.json", "Config file in json.")
 	brokers       = flag.String("brokers", "", "kafka brokers, this overrides config file.")
-	topic         = flag.String("topic", "", "kafka topic, this overrides config file.")
+	topic         = flag.String("topic", "", "kafka topics, the order is default, activation, registration, order, split with comma, this overrides config file.")
 	partitioner   = flag.String("partitioner", "", "kafka partitioner, this overrides config file.")
 	partition     = flag.String("partition", "", "kafka partition, this overrides config file.")
 	schema        = flag.String("schema", "", "avro schema file, this overrides config file.")
@@ -231,7 +232,16 @@ func init() {
 		conf.KafkaSetting["brokers"] = *brokers
 	}
 	if *topic != "" {
-		conf.KafkaSetting["topic"] = *topic
+		topic_data := map[string](interface{}){}
+		topic_strs := strings.Split(*topic, ",")
+		if len(topic_strs) != 4 {
+			logger.Fatalln("Failed to parse flags: Not enough topics:", *topic)
+		}
+		topic_data["default"] = topic_strs[0]
+		topic_data["activation"] = topic_strs[1]
+		topic_data["registration"] = topic_strs[2]
+		topic_data["order"] = topic_strs[3]
+		conf.KafkaSetting["topic"] = topic_data
 	}
 	if *partitioner != "" {
 		conf.KafkaSetting["partitioner"] = *partitioner
