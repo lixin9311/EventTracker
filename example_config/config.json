@@ -5,9 +5,14 @@
     },
     "kafka" : {
         "brokers" : "localhost:9092",
-        "topic" : "test",
+        "topic" : {
+            "default" : "default",
+            "activation" : "activation",
+            "order" : "order",
+            "registration" : "registration"
+        },
         "partitioner" : "hash",
-        "partition" : "-1"
+        "partition" : -1
     },
     "avro" : {
         "schema" : "event.avsc"
