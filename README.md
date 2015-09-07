@@ -15,4 +15,15 @@
 ```
 ## config.json
 示例文件在`example_config`下
+## 接口
+### event接口
+URL: `/event` method: Post/Get
+必填参数: `did`(设备id), `timestamp`(unix utc second), `event_type`(默认三类:activation, registration, order.以及其他)
+可选参数 `aid`(auction id), `ip`
 
+### CSV接口
+URL: `/`
+CSV格式: 首行为各列标题，同event接口，其余为数据
+
+###返回
+成功会返回`HTTP 200`以及成功写入条数
