@@ -90,6 +90,18 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 			logger.Println("csv file extension title:", v)
 		}
 	}
+	if _, ok := title["did"]; !ok {
+		ErrorAndReturnCode(w, "Missing Required field: No did", 400)
+		return
+	}
+	if _, ok := title["timestamp"]; !ok {
+		ErrorAndReturnCode(w, "Missing Required field: No timestamp", 400)
+		return
+	}
+	if _, ok := ext["event_type"]; !ok {
+		ErrorAndReturnCode(w, "Missing Required field: No event_type", 400)
+		return
+	}
 	// read the record one by one and send it to kafka
 	buf := new(bytes.Buffer)
 	counter := 0
@@ -128,7 +140,7 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// send to kafka
-		_, _, err = kafka.SendByteMessage(buf.Bytes())
+		_, _, err = kafka.SendByteMessage(buf.Bytes(), record[ext["event_type"]])
 		buf.Reset()
 		if err != nil {
 			ErrorAndReturnCode(w, "Failed to send to kafka:"+err.Error(), 500)
@@ -148,11 +160,15 @@ func EventHandler(w http.ResponseWriter, r *http.Request) {
 	logger.Println("Incomming event from:", r.RemoteAddr)
 	// required fields
 	if len(r.Form["did"]) < 1 {
-		ErrorAndReturnCode(w, "Missing Required field: No device id", 400)
+		ErrorAndReturnCode(w, "Missing Required field: No did", 400)
 		return
 	}
 	if len(r.Form["timestamp"]) < 1 {
 		ErrorAndReturnCode(w, "Missing Required field: No timestamp", 400)
+		return
+	}
+	if len(r.Form["event_type"]) < 1 {
+		ErrorAndReturnCode(w, "Missing Required field: No event_type", 400)
 		return
 	}
 	// set a new avro record
@@ -194,7 +210,7 @@ func EventHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// send to kafka
-	part, offset, err := kafka.SendByteMessage(buf.Bytes())
+	part, offset, err := kafka.SendByteMessage(buf.Bytes(), r.Form["event_type"][0])
 	if err != nil {
 		ErrorAndReturnCode(w, "Failed to send message to kafka:"+err.Error(), 500)
 		return

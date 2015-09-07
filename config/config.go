@@ -17,12 +17,17 @@ func init() {
 
 // Config is the basic struct of a config file
 type Config struct {
-	MainSetting  map[string]string `json:"main"`
-	AvroSetting  map[string]string `json:"avro"`
-	KafkaSetting map[string]string `json:"kafka"`
+	MainSetting  map[string]string      `json:"main"`
+	AvroSetting  map[string]string      `json:"avro"`
+	KafkaSetting map[string]interface{} `json:"kafka"`
 }
 
 func checkConfig(config *Config) {
+	defer func() {
+		if err := recover(); err != nil {
+			logger.Fatalln("Config cannot pass check, please check its format:", err)
+		}
+	}()
 	if config.MainSetting == nil {
 		config.MainSetting = map[string]string{}
 	}
@@ -32,7 +37,7 @@ func checkConfig(config *Config) {
 	}
 
 	if config.KafkaSetting == nil {
-		config.KafkaSetting = map[string]string{}
+		config.KafkaSetting = map[string](interface{}){}
 	}
 
 	if _, ok := config.MainSetting["port"]; !ok {
@@ -51,8 +56,30 @@ func checkConfig(config *Config) {
 	}
 
 	if _, ok := config.KafkaSetting["topic"]; !ok {
-		logger.Println("Missing kafka.topic, using default value:", "test")
-		config.KafkaSetting["topic"] = "test"
+		logger.Println("Missing kafka.topic, using default value:", map[string]string{"default": "default", "activation": "activation", "order": "order", "registration": "registration"})
+		config.KafkaSetting["topic"] = map[string]string{"default": "default", "activation": "activation", "order": "order", "registration": "registration"}
+	} else {
+		for k, v := range config.KafkaSetting["topic"].(map[string]interface{}) {
+			if k != "default" || k != "registration" || k != "order" || k != "activation" {
+				logger.Printf("Unkown field in kafka.topic, k: %s, val: %s.", k, v)
+			}
+		}
+		if _, ok := config.KafkaSetting["topic"].(map[string]interface{})["default"]; !ok {
+			logger.Println("Missing kafka.topic.default, using default value:", "default")
+			config.KafkaSetting["topic"].(map[string]interface{})["default"] = "default"
+		}
+		if _, ok := config.KafkaSetting["topic"].(map[string]interface{})["activation"]; !ok {
+			logger.Println("Missing kafka.topic.activation, using default value:", "activation")
+			config.KafkaSetting["topic"].(map[string]interface{})["activation"] = "activation"
+		}
+		if _, ok := config.KafkaSetting["topic"].(map[string]interface{})["order"]; !ok {
+			logger.Println("Missing kafka.topic.order, using default value:", "order")
+			config.KafkaSetting["topic"].(map[string]interface{})["order"] = "order"
+		}
+		if _, ok := config.KafkaSetting["topic"].(map[string]interface{})["registration"]; !ok {
+			logger.Println("Missing kafka.topic.registration, using default value:", "registration")
+			config.KafkaSetting["topic"].(map[string]interface{})["registration"] = "registration"
+		}
 	}
 
 	if _, ok := config.KafkaSetting["partitioner"]; !ok {
@@ -62,7 +89,7 @@ func checkConfig(config *Config) {
 
 	if _, ok := config.KafkaSetting["partition"]; !ok {
 		logger.Println("Missing kafka.partition, using default value:", "-1")
-		config.KafkaSetting["partition"] = "-1"
+		config.KafkaSetting["partition"] = -1
 	}
 
 	if _, ok := config.AvroSetting["schema"]; !ok {

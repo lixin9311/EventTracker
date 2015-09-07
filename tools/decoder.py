@@ -10,14 +10,14 @@ from kafka.producer import SimpleProducer
 import json
 import io
 
-schema = avro.schema.parse(open("./event.avsc").read())
+schema = avro.schema.parse(open("../event.avsc").read())
 
 reader = avro.io.DatumReader(schema)
 
 print "connect"
 
 client = KafkaClient("localhost:9092")
-consumer = SimpleConsumer(client, "test", "test")
+consumer = SimpleConsumer(client, "default", "default")
 
 print "start"
 
