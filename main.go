@@ -38,6 +38,7 @@ var (
 	bakfile       = flag.String("bakfile", "", "backup file, for fail safety, this overrides config file.")
 	// Fail safe buffer file
 	fail_safe *log.Logger
+	address   string
 )
 
 // HomeHandler is the index page for upload the csv file
@@ -277,7 +278,7 @@ func init() {
 	if err != nil {
 		logger.Fatalln("Failed to open backup file:", err)
 	}
-	fail_safe = log.New(safe_file, "", log.LstdFlags|log.Lshortfile)
+	fail_safe = log.New(safe_file, "", log.LstdFlags)
 	file, err := os.OpenFile(conf.MainSetting["logfile"], os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		logger.Fatalln("Failed to open log file:", err)
@@ -320,7 +321,7 @@ func main() {
 				logger.Fatalln("Failed to connect to the front service:", err)
 			}
 			rpcClient := rpc.NewClient(conn)
-			address := "http://" + ln.Addr().String()
+			address = "http://" + ln.Addr().String()
 			var response error
 			err = rpcClient.Call("Handle.Update", &address, &response)
 			if err != nil {
@@ -331,6 +332,25 @@ func main() {
 			}
 			rpcClient.Close()
 			logger.Println("Registered to the front service.")
+		}()
+		defer func() {
+			// reg service to front
+			logger.Println("Unsigning service to front server:", conf.FrontSetting["address"].(string))
+			conn, err := net.Dial("tcp", conf.FrontSetting["address"].(string))
+			if err != nil {
+				logger.Fatalln("Failed to connect to the front service:", err)
+			}
+			rpcClient := rpc.NewClient(conn)
+			var response error
+			err = rpcClient.Call("Handle.Delete", &address, &response)
+			if err != nil {
+				logger.Println("Failed to unsign:", err)
+			}
+			if response != nil {
+				log.Println("Failed to unsign:", response)
+			}
+			rpcClient.Close()
+			logger.Println("Gracefully unsigned from front serive.")
 		}()
 	} else {
 		ln, err = net.Listen("tcp", ":"+conf.MainSetting["port"])

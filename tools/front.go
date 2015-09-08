@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -25,50 +26,126 @@ var (
 	rpcAddress = flag.String("rpc_address", "", "RPC service address.")
 	logfile    = flag.String("log", "", "logfile.")
 	force      = flag.Bool("F", false, "Force enable.")
+	balance    = flag.Bool("B", false, "Load Balance.")
+	counter    = uint64(0)
 )
+
+type endpoint struct {
+	*httputil.ReverseProxy
+	url string
+}
+
+func newEndpoint(urlstr string) (*endpoint, error) {
+	u, err := url.Parse(urlstr)
+	if err != nil {
+		return nil, err
+	}
+	return &endpoint{httputil.NewSingleHostReverseProxy(u), urlstr}, nil
+}
 
 type Handle struct {
 	sync.Mutex
-	url_str string
-	url     *url.URL
+	url_str   string
+	url       *url.URL
+	endpoints map[string]*endpoint
+	current   *endpoint
 }
 
 func (h *Handle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	atomic.AddUint64(&counter, uint64(1))
 	h.Lock()
 	defer h.Unlock()
-	if h.url == nil {
+	if len(h.endpoints) == 0 {
 		http.Error(w, "No server registrated.", 500)
 		return
 	}
-	proxy := httputil.NewSingleHostReverseProxy(h.url)
-	proxy.ServeHTTP(w, r)
+	if *balance {
+		goto BALANCE
+	} else {
+		if h.current != nil {
+			if err := h.current.Ping(); err != nil {
+				logger.Println("Current endpoint may not functioning, fallback:", err)
+				goto FALLBACK
+			}
+			h.current.ServeHTTP(w, r)
+		} else {
+			http.Error(w, "No server registrated.", 500)
+			return
+		}
+	}
 	return
+
+BALANCE:
+	{
+		for k, v := range h.endpoints {
+			if err := v.Ping(); err != nil {
+				delete(h.endpoints, k)
+				continue
+			}
+			v.ServeHTTP(w, r)
+			return
+		}
+		http.Error(w, "No server available.", 500)
+		return
+	}
+FALLBACK:
+	{
+		for k, v := range h.endpoints {
+			if err := v.Ping(); err != nil {
+				delete(h.endpoints, k)
+				continue
+			}
+			h.current = v
+			v.ServeHTTP(w, r)
+			return
+		}
+		http.Error(w, "No server available.", 500)
+		return
+	}
 }
 
 func (h *Handle) Update(req *string, rep *error) error {
 	var err error
 	h.Lock()
 	defer h.Unlock()
-	h.url_str = *req
-	h.url, err = url.Parse(h.url_str)
+	e, err := newEndpoint(*req)
 	if err != nil {
+		logger.Println("Failed to add a new endpoint:", err)
 		*rep = err
-		logger.Println("Failed to update backend server address:", err)
 		return err
 	}
+	if h.endpoints == nil {
+		h.endpoints = map[string]*endpoint{*req: e}
+	} else {
+		h.endpoints[*req] = e
+	}
+	h.current = e
 	logger.Println("Backend server address updated:", *req)
 	*rep = nil
 	return nil
 }
 
-func (h *Handle) Ping() error {
+func (h *Handle) Delete(req *string, rep *error) error {
 	h.Lock()
-	if h.url_str == "" {
-		h.Unlock()
-		return nil
+	defer h.Unlock()
+	logger.Println("Backend server unsigned:", *req)
+	delete(h.endpoints, *req)
+	*rep = nil
+	return nil
+}
+
+func (h *Handle) Ping() {
+	h.Lock()
+	defer h.Unlock()
+	for k, v := range h.endpoints {
+		if err := v.Ping(); err != nil {
+			delete(h.endpoints, k)
+		}
 	}
-	resp, err := http.Get(h.url_str + "/ping")
-	h.Unlock()
+}
+
+func (e *endpoint) Ping() error {
+	resp, err := http.Get(e.url + "/ping")
 	if err != nil {
 		return err
 	}
@@ -128,10 +205,7 @@ func main() {
 	go func() {
 		for {
 			time.Sleep(5 * time.Second)
-			err := handle.Ping()
-			if err != nil {
-				logger.Println("Backend server may not be functioning:", err)
-			}
+			handle.Ping()
 		}
 	}()
 	startService()

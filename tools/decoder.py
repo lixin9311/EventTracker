@@ -39,8 +39,6 @@ for message in consumer:
     print message.message.key, obj
     index += 1
     print index
-    if index == 10:
-        break 
 
 a.close()
 b.close()
