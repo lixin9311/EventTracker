@@ -62,7 +62,13 @@ func PingHandler(w http.ResponseWriter, r *http.Request) {
 
 // UploadHandler handles the upload file
 func UploadHandler(w http.ResponseWriter, r *http.Request) {
-	logger.Println("Incomming upload file from:", r.RemoteAddr)
+	var remote string
+	if tmp := r.Header.Get("X-Forwarded-For"); tmp != "" {
+		remote = tmp
+	} else {
+		remote = r.RemoteAddr
+	}
+	logger.Println("Incomming upload file from:", remote)
 	// limit the file size
 	if r.ContentLength > MaxFileSize {
 		ErrorAndReturnCode(w, "The file is too large:"+strconv.FormatInt(r.ContentLength, 10)+"bytes", 400)
@@ -171,7 +177,13 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 // EventHandler is the REST api handler
 func EventHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
-	logger.Println("Incomming event from:", r.RemoteAddr)
+	var remote string
+	if tmp := r.Header.Get("X-Forwarded-For"); tmp != "" {
+		remote = tmp
+	} else {
+		remote = r.RemoteAddr
+	}
+	logger.Println("Incomming event from:", remote)
 	// required fields
 	if len(r.Form["did"]) < 1 {
 		ErrorAndReturnCode(w, "Missing Required field: No did", 400)
