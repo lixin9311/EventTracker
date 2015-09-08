@@ -17,7 +17,7 @@
 ## config.json
 示例文件在`example_config`下。
 
-注意: 若使用`front`,每一个应用实例会使用配置文件中的`front.backend_http_listen_address`作为监听地址,一般指定为一个内网ip+port的形式,并且向`front`注册.
+注意: 若使用`front`,每一个应用实例会使用配置文件中的`front.backend_http_listen_address`作为监听地址,并忽略`main.port`,一般指定为一个内网ip+port的形式,并且向`front`注册.
 
 注意: 端口为`0`代表随机使用一个可用端口.
 ## Tools : front
