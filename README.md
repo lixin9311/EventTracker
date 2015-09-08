@@ -34,6 +34,16 @@
         -B                                              (随机?)负载均衡?.我觉得有点不太随机.
 ```
 先启动front,然后再启动EventTracker实例.
+## Tools : importbak
+将`bakfile`里面存留的kafka写入失败数据导入到kafka里
+```
+    importbak
+        -c <config.json>                                配置文件,一般来说所有参数都在配置文件里设定就足够了,下面的参数会覆盖配置文件的配置.
+        -i <bacckup.log>                                输入的文件.
+```
+再次写入失败的记录会保存在`backfile.N`的文件中,N顺次+1.注意及时清理.
+###用法
+
 ## 接口
 ### event接口
 URL: `/event` method: `Post/Get`
