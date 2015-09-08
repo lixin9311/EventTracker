@@ -1,5 +1,16 @@
 # EventTracker
 接收事件数据并格式化成avro格式,然后打到kafka里.
+## 安装
+安装好go语言并且设定好环境变量`GOPATH`和`GOBIN`
+
+```bash
+# For main instance
+go get github.com/lixin9311/EventTracker
+# For front
+go get github.com/lixin9311/EventTracker/tools/front
+# For importbak
+go get github.com/lixin9311/EventTracker/tools/importbak
+```
 ## 用法
 一般只需要指定配置文件就可以,启动参数的设置会覆盖配置文件里的设置.
 ```
