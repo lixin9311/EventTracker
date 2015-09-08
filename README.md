@@ -12,7 +12,7 @@
         -schema <event.avsc>                            avro schema file.
         -port <1080>                                    http监听端口.
         -log <log.log>                                  logfile
-        -backfile <backup.log>                          kafka写入失败时用来存储数据的暂存文件（没实现自动再写入kafka）.
+        -backfile <backup.log>                          kafka写入失败时用来存储数据的暂存文件（使用importbak再导入kafka）.
 ```
 ## config.json
 示例文件在`example_config`下。
