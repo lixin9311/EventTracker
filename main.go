@@ -12,7 +12,9 @@ import (
 	"html/template"
 	"io"
 	"log"
+	"net"
 	"net/http"
+	"net/rpc"
 	"os"
 	"strconv"
 	"strings"
@@ -33,6 +35,9 @@ var (
 	schema        = flag.String("schema", "", "avro schema file, this overrides config file.")
 	port          = flag.String("port", "", "http listen port, this overrides config file.")
 	logfile       = flag.String("log", "", "logfile, this overrides config file.")
+	bakfile       = flag.String("bakfile", "", "backup file, for fail safety, this overrides config file.")
+	// Fail safe buffer file
+	fail_safe *log.Logger
 )
 
 // HomeHandler is the index page for upload the csv file
@@ -48,6 +53,10 @@ func HomeHandler(w http.ResponseWriter, r *http.Request) {
 func ErrorAndReturnCode(w http.ResponseWriter, errstr string, code int) {
 	logger.Println(errstr)
 	http.Error(w, errstr, code)
+}
+
+func PingHandler(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintf(w, "Pong")
 }
 
 // UploadHandler handles the upload file
@@ -142,11 +151,14 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		// send to kafka
 		_, _, err = kafka.SendByteMessage(buf.Bytes(), record[ext["event_type"]])
-		buf.Reset()
 		if err != nil {
+			fail_safe.Println(err)
+			fail_safe.Println(arecord)
+			fail_safe.Println(buf.Bytes())
 			ErrorAndReturnCode(w, "Failed to send to kafka:"+err.Error(), 500)
 			return
 		}
+		buf.Reset()
 		counter++
 	}
 	// done
@@ -179,14 +191,10 @@ func EventHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// optional fields
-	if len(r.Form["ip"]) < 1 {
-		logger.Println("no ip")
-	} else {
+	if len(r.Form["ip"]) > 0 {
 		record.Set("ip", r.Form["ip"][0])
 	}
-	if len(r.Form["aid"]) < 1 {
-		logger.Println("no aid")
-	} else {
+	if len(r.Form["aid"]) > 0 {
 		record.Set("aid", r.Form["aid"][0])
 	}
 	// set required fields
@@ -207,13 +215,17 @@ func EventHandler(w http.ResponseWriter, r *http.Request) {
 	// encode avro
 	buf := new(bytes.Buffer)
 	if err = avro.Encode(buf, record); err != nil {
+		logger.Println("AVRO record:", record)
 		ErrorAndReturnCode(w, "Failed to encode avro record:"+err.Error(), 500)
 		return
 	}
 	// send to kafka
 	part, offset, err := kafka.SendByteMessage(buf.Bytes(), r.Form["event_type"][0])
 	if err != nil {
-		ErrorAndReturnCode(w, "Failed to send message to kafka:"+err.Error(), 500)
+		fail_safe.Println(err)
+		fail_safe.Println(record)
+		fail_safe.Println(buf.Bytes())
+		ErrorAndReturnCode(w, "Failed to send message to kafka:"+err.Error()+"Data has been writen to a backup file. Please contact us.", 500)
 		return
 	}
 	// done
@@ -258,6 +270,14 @@ func init() {
 	if *port != "" {
 		conf.MainSetting["port"] = *port
 	}
+	if *bakfile != "" {
+		conf.MainSetting["bakfile"] = *bakfile
+	}
+	safe_file, err := os.OpenFile(conf.MainSetting["bakfile"], os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	if err != nil {
+		logger.Fatalln("Failed to open backup file:", err)
+	}
+	fail_safe = log.New(safe_file, "", log.LstdFlags|log.Lshortfile)
 	file, err := os.OpenFile(conf.MainSetting["logfile"], os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		logger.Fatalln("Failed to open log file:", err)
@@ -282,9 +302,44 @@ func main() {
 	r.HandleFunc("/", HomeHandler)
 	r.HandleFunc("/event", EventHandler)
 	r.HandleFunc("/upload", UploadHandler)
+	r.HandleFunc("/ping", PingHandler)
 	// bring up the service
-	logger.Println("Http server listening at 8080")
-	err = http.ListenAndServe(":"+conf.MainSetting["port"], r)
+	var ln net.Listener
+	if conf.FrontSetting["enable"].(bool) == true {
+		logger.Println("Using a Front server.")
+		ln, err = net.Listen("tcp", conf.FrontSetting["backend_http_listen_address"].(string))
+		if err != nil {
+			logger.Fatalln("Failed to listen:", err)
+		}
+		logger.Println("Http server listening a random local port at:", ln.Addr())
+		go func() {
+			// reg service to front
+			logger.Println("Registering service to front server:", conf.FrontSetting["address"].(string))
+			conn, err := net.Dial("tcp", conf.FrontSetting["address"].(string))
+			if err != nil {
+				logger.Fatalln("Failed to connect to the front service:", err)
+			}
+			rpcClient := rpc.NewClient(conn)
+			address := "http://" + ln.Addr().String()
+			var response error
+			err = rpcClient.Call("Handle.Update", &address, &response)
+			if err != nil {
+				logger.Fatalln("Failed to register service:", err)
+			}
+			if response != nil {
+				log.Fatalln("Failed to register service:", response)
+			}
+			rpcClient.Close()
+			logger.Println("Registered to the front service.")
+		}()
+	} else {
+		ln, err = net.Listen("tcp", ":"+conf.MainSetting["port"])
+		if err != nil {
+			logger.Fatalln("Fail to listen:", err)
+		}
+	}
+	// err = http.ListenAndServe(":"+conf.MainSetting["port"], r)
+	err = http.Serve(ln, r)
 	if err != nil {
 		logger.Fatalln("Failed to listen http server:", err)
 	}

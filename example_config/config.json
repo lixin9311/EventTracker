@@ -16,5 +16,10 @@
     },
     "avro" : {
         "schema" : "event.avsc"
+    },
+    "front" : {
+        "enable": true,
+        "address": "127.0.0.1:8081",
+        "backend_http_listen_address": "127.0.0.1:0"
     }
 }

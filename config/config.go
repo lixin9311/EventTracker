@@ -19,6 +19,7 @@ func init() {
 type Config struct {
 	MainSetting  map[string]string      `json:"main"`
 	AvroSetting  map[string]string      `json:"avro"`
+	FrontSetting map[string]interface{} `json:"front"`
 	KafkaSetting map[string]interface{} `json:"kafka"`
 }
 
@@ -40,9 +41,33 @@ func checkConfig(config *Config) {
 		config.KafkaSetting = map[string](interface{}){}
 	}
 
+	if config.FrontSetting == nil {
+		config.FrontSetting = map[string](interface{}){}
+	}
+
 	if _, ok := config.MainSetting["port"]; !ok {
 		logger.Println("Missing main.port, using default value:", "8080")
 		config.MainSetting["port"] = "8080"
+	}
+
+	if _, ok := config.FrontSetting["enable"]; !ok {
+		logger.Println("Missing front.port, using default value:", "false")
+		config.FrontSetting["enable"] = false
+	}
+
+	if _, ok := config.FrontSetting["address"]; !ok {
+		logger.Println("Missing front.port, using default value:", "127.0.0.1:8081")
+		config.FrontSetting["address"] = "127.0.0.1:8081"
+	}
+
+	if _, ok := config.FrontSetting["backend_http_listen_address"]; !ok {
+		logger.Println("Missing front.backend_http_listen_address, using default value:", "127.0.0.1:0")
+		config.FrontSetting["backend_http_listen_addres"] = "127.0.0.1:0"
+	}
+
+	if _, ok := config.MainSetting["bakfile"]; !ok {
+		logger.Println("Missing main.bakfile, using default value:", "backup.log")
+		config.MainSetting["bakfile"] = "backup.log"
 	}
 
 	if _, ok := config.MainSetting["logfile"]; !ok {
@@ -60,7 +85,7 @@ func checkConfig(config *Config) {
 		config.KafkaSetting["topic"] = map[string]string{"default": "default", "activation": "activation", "order": "order", "registration": "registration"}
 	} else {
 		for k, v := range config.KafkaSetting["topic"].(map[string]interface{}) {
-			if k != "default" || k != "registration" || k != "order" || k != "activation" {
+			if k != "default" && k != "registration" && k != "order" && k != "activation" {
 				logger.Printf("Unkown field in kafka.topic, k: %s, val: %s.", k, v)
 			}
 		}
