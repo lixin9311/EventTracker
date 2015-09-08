@@ -159,9 +159,9 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 		// send to kafka
 		_, _, err = kafka.SendByteMessage(buf.Bytes(), record[ext["event_type"]])
 		if err != nil {
-			fail_safe.Println(err)
-			fail_safe.Println(arecord)
-			fail_safe.Println(buf.Bytes())
+			fail_safe.Println("error:", err)
+			fail_safe.Println("record:", arecord)
+			fail_safe.Println("data:", buf.Bytes())
 			ErrorAndReturnCode(w, "Failed to send to kafka:"+err.Error(), 500)
 			return
 		}
@@ -235,9 +235,9 @@ func EventHandler(w http.ResponseWriter, r *http.Request) {
 	// send to kafka
 	part, offset, err := kafka.SendByteMessage(buf.Bytes(), r.Form["event_type"][0])
 	if err != nil {
-		fail_safe.Println(err)
-		fail_safe.Println(record)
-		fail_safe.Println(buf.Bytes())
+		fail_safe.Println("error:", err)
+		fail_safe.Println("record:", record)
+		fail_safe.Println("data:", buf.Bytes())
 		ErrorAndReturnCode(w, "Failed to send message to kafka:"+err.Error()+"Data has been writen to a backup file. Please contact us.", 500)
 		return
 	}
