@@ -35,7 +35,7 @@ var (
 	schema        = flag.String("schema", "", "avro schema file, this overrides config file.")
 	port          = flag.String("port", "", "http listen port, this overrides config file.")
 	logfile       = flag.String("log", "", "logfile, this overrides config file.")
-	bakfile       = flag.String("bakfile", "", "backup file, for fail safety, this overrides config file.")
+	bakfile       = flag.String("bakfile", "", "backup file, for fail safety when kafka write fails, this overrides config file.")
 	// Fail safe buffer file
 	fail_safe *log.Logger
 	address   string

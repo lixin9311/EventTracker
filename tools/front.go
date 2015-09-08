@@ -23,7 +23,7 @@ var (
 	conf       *config.Config
 	configFile = flag.String("c", "config.json", "Config file in json.")
 	httpPort   = flag.String("http_port", "", "Http listen port.")
-	rpcAddress = flag.String("rpc_address", "", "RPC service address.")
+	rpcAddress = flag.String("rpc_address", "", "RPC service registration address.")
 	logfile    = flag.String("log", "", "logfile.")
 	force      = flag.Bool("F", false, "Force enable.")
 	balance    = flag.Bool("B", false, "Load Balance.")
@@ -56,7 +56,7 @@ func (h *Handle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.Lock()
 	defer h.Unlock()
 	if len(h.endpoints) == 0 {
-		http.Error(w, "No server registrated.", 500)
+		http.Error(w, "No server registered.", 500)
 		return
 	}
 	if *balance {
@@ -69,7 +69,7 @@ func (h *Handle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			h.current.ServeHTTP(w, r)
 		} else {
-			http.Error(w, "No server registrated.", 500)
+			http.Error(w, "No server registered.", 500)
 			return
 		}
 	}
