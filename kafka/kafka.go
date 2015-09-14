@@ -5,13 +5,18 @@ import (
 	"io"
 	"log"
 	"strings"
+	"sync"
+)
+
+const (
+	buffersize = 128
 )
 
 var (
 	producer   sarama.SyncProducer
 	topic      = map[string]string{}
 	partition  = int32(-1)
-	brokerlist = "localhost:9092"
+	brokerlist = ""
 	logger     *log.Logger
 )
 
@@ -54,6 +59,7 @@ func Init(w io.Writer, setting map[string]interface{}) {
 	})
 	config.Producer.RequiredAcks = sarama.WaitForAll
 	// init producer
+	brokerlist = setting["brokers"].(string)
 	producer, err = sarama.NewSyncProducer(strings.Split(setting["brokers"].(string), ","), config)
 	if err != nil {
 		logger.Fatalln("Init failed:", err)
@@ -87,4 +93,37 @@ func Destroy() {
 	if err != nil {
 		logger.Println("failed to close producer gracefully:", err)
 	}
+}
+
+func Consumer(topic string, messages chan<- []byte, closing <-chan struct{}) {
+	var wg sync.WaitGroup
+	consumer, err := sarama.NewConsumer(strings.Split(brokerlist, ","), nil)
+	if err != nil {
+		logger.Println("Failed to create consumer:", err)
+		return
+	}
+	partitionList, err := consumer.Partitions(topic)
+	if err != nil {
+		logger.Println("Failed to get partitions:", err)
+		return
+	}
+	for _, partition := range partitionList {
+		pc, err := consumer.ConsumePartition(topic, partition, sarama.OffsetNewest)
+		if err != nil {
+			log.Println("Failed to create partition consumer:", err)
+			return
+		}
+		go func(pc sarama.PartitionConsumer) {
+			defer wg.Done()
+			<-closing
+			pc.AsyncClose()
+		}(pc)
+		wg.Add(1)
+		go func(pc sarama.PartitionConsumer) {
+			for message := range pc.Messages() {
+				messages <- message.Value
+			}
+		}(pc)
+	}
+	wg.Wait()
 }

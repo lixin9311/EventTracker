@@ -38,7 +38,7 @@ var (
 	bakfile       = flag.String("bakfile", "", "backup file, for fail safety when kafka write fails, this overrides config file.")
 	// Fail safe buffer file
 	fail_safe *log.Logger
-	address   string
+	address   []string
 )
 
 // HomeHandler is the index page for upload the csv file
@@ -333,7 +333,7 @@ func main() {
 				logger.Fatalln("Failed to connect to the front service:", err)
 			}
 			rpcClient := rpc.NewClient(conn)
-			address = "http://" + ln.Addr().String()
+			address = []string{"/", "http://" + ln.Addr().String()}
 			var response error
 			err = rpcClient.Call("Handle.Update", &address, &response)
 			if err != nil {
