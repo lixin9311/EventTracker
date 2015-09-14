@@ -170,7 +170,7 @@ func (h *Handle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "No server registered.", 500)
 		return
 	}
-	longest := "/"
+	longest := ""
 	for k, _ := range h.endpoints {
 		if strings.HasPrefix(r.URL.Path, k) {
 			if len(k) > len(longest) {
@@ -180,6 +180,7 @@ func (h *Handle) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if _, ok := h.endpoints[longest]; !ok {
 		http.Error(w, "No handler matched.", 500)
+		return
 	}
 	h.endpoints[longest].ServeHTTP(w, r)
 	return
