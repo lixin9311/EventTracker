@@ -158,9 +158,16 @@ func readKafka() {
 		buffer := new(bytes.Buffer)
 		buffer.Write(<-messages)
 		record, err := avro.Decode(buffer)
+		event, err := record.Get("event")
+		if err != nil {
+			logger.Println("Failed to get event:", err)
+		}
+		if event.(string) != "click" {
+			continue
+		}
 		gid, err := record.Get("gid")
 		if err != nil {
-			logger.Fatalln("Failed to get ad_group_id")
+			logger.Println("Failed to get ad_group_id:", err)
 			continue
 		}
 		switch gid.(type) {
@@ -173,16 +180,25 @@ func readKafka() {
 			logger.Println("Unknow type of gid after avro decode:", gid)
 			continue
 		}
-		id, err := strconv.ParseInt(gid.(string), 10, 64)
-		if err != nil {
-			log.Printf("Failed to parse string(%s) to int: %s", gid.(string), err)
-			continue
-		}
-		if !ad_groupid_list.get(id) {
-			logger.Println("The gid does not match!")
-			continue
+		if *DEBUG {
+
+			id, err := strconv.ParseInt(gid.(string), 10, 64)
+			if err != nil {
+				log.Printf("Failed to parse string(%s) to int: %s", gid.(string), err)
+				continue
+			}
+			if !ad_groupid_list.get(id) {
+				//if false {
+				logger.Println("The gid does not match!")
+				continue
+			}
 		}
 		logger.Println("gid matched!:", record)
+		aid, err := record.Get("aid")
+		if err != nil {
+			logger.Println("Failed to get aid:", err)
+			continue
+		}
 		idfa, err := record.Get("did")
 		if err != nil {
 			logger.Println("Failed to get idfa:", err)
@@ -211,21 +227,31 @@ func readKafka() {
 			continue
 		}
 		ext_map := ext.(map[string]interface{})
-		if _, ok := ext_map["advid"]; !ok {
-			logger.Println("Not found advid in ext_mapension.")
+		if _, ok := ext_map["adv_id"]; !ok {
+			logger.Println("Not found adv_id in ext_map.")
 			continue
 		}
 		if _, ok := ext_map["os_version"]; !ok {
-			logger.Println("Not found os_version in ext_mapension.")
+			logger.Println("Not found os_version in ext_map.")
 			continue
 		}
 		if _, ok := ext_map["device_model"]; !ok {
-			logger.Println("Not found device_model in ext_mapension.")
+			logger.Println("Not found device_model in ext_map.")
 			continue
 		}
-		keywords := ""
+		for k, v := range ext_map {
+			if _, ok := v.(string); !ok {
+				logger.Printf("%s unkown\n", k)
+				ext_map[k] = "unknown"
+			}
+			if v.(string) == "" {
+				ext_map[k] = "unknown"
+			}
+		}
+		keywords := aid.(string)
 		base := "http://offer.adwo.com/offerwallcharge/clk"
-		url := fmt.Sprintf("%s?advid=%s&ip=%s&cts=%s&osv=%s&mobile=%s&idfa=%s&keywords=%s", base, ext_map["advid"].(string), ip.(string), cts.(string), ext_map["os_version"].(string), ext_map["device_model"].(string), idfa.(string), keywords)
+		base = "http://127.0.0.1:9090/clk"
+		url := fmt.Sprintf("%s?advid=%s&ip=%s&cts=%s&osv=%s&mobile=%s&idfa=%s&keywords=%s", base, ext_map["adv_id"].(string), ip.(string), cts.(string), ext_map["os_version"].(string), ext_map["device_model"].(string), idfa.(string), keywords)
 		log.Println(url)
 		go func(url string) {
 			request, err := http.NewRequest("GET", url, nil)
@@ -318,19 +344,25 @@ func EventHandler(w http.ResponseWriter, r *http.Request) {
 	if len(r.Form["ip"]) > 0 {
 		record.Set("ip", r.Form["ip"][0])
 	}
-	if len(r.Form["aid"]) > 0 {
-		record.Set("aid", r.Form["aid"][0])
-	}
+	record.Set("aid", r.Form["keywords"][0])
 
 	// set required fields
 	record.Set("did", r.Form["idfa"][0])
-	record.Set("timestamp", r.Form["ts"][0])
+	nsec, err := strconv.ParseInt(r.Form["ts"][0], 10, 64)
+	if err != nil {
+		logger.Println("Failed to parse ts to int:", err)
+		ErrorAndReturnCode(w, "Failed to parse ts:"+err.Error(), 500)
+		return
+	}
+	t := time.Unix(0, nsec)
+	record.Set("timestamp", t.Format(time.RFC3339))
 	record.Set("event", "TrackerEvent")
 	record.Set("id", "")
+	record.Set("os", "ios")
 	// extensions fields
 	extension := map[string](interface{}){}
 	for k, v := range r.Form {
-		if k != "ip" && k != "aid" && k != "idfa" && k != "timestamp" {
+		if k != "ip" && k != "aid" && k != "idfa" && k != "timestamp" && k != "keywords" && k != "sign" && k != "key" {
 			extension[k] = v[0]
 		}
 	}
@@ -452,34 +484,36 @@ func init() {
 
 func main() {
 	var err error
-	db_str := fmt.Sprintf("Servername=%s;Port=%d;Locale=en_US;Database=%s;UID=%s;PWD=%s;Driver=//opt//vertica//lib64//libverticaodbc.so;", conf.Extension.Anwo.Db_server, conf.Extension.Anwo.Db_port, conf.Extension.Anwo.Db, conf.Extension.Anwo.Db_user, conf.Extension.Anwo.Db_pwd)
-	connection, err = sql.Open("odbc", db_str)
-	if err != nil {
-		logger.Fatalln("Failed to open:", err)
-	}
-	if *lsadvertiser {
-		lsadvertisers()
-		return
-	}
-	defer connection.Close()
-	row := connection.QueryRow("SELECT advertiser_id, display_name, logon_name FROM advertiser WHERE advertiser_id=?", conf.Extension.Anwo.Advertiser_id)
-	err = row.Scan(ad.Id(), ad.Name(), ad.Logon())
-	if err != nil {
-		if err == sql.ErrNoRows {
-			logger.Fatalln("No such user with that ID:", err)
-		} else {
-			logger.Fatalln("Failed to read Database:", err)
+	if *DEBUG {
+		db_str := fmt.Sprintf("Servername=%s;Port=%d;Locale=en_US;Database=%s;UID=%s;PWD=%s;Driver=//opt//vertica//lib64//libverticaodbc.so;", conf.Extension.Anwo.Db_server, conf.Extension.Anwo.Db_port, conf.Extension.Anwo.Db, conf.Extension.Anwo.Db_user, conf.Extension.Anwo.Db_pwd)
+		connection, err = sql.Open("odbc", db_str)
+		if err != nil {
+			logger.Fatalln("Failed to open:", err)
 		}
-	}
-	go func() {
-		for {
-			if ad_groupid_list.size() > 100000 {
-				ad_groupid_list.flush()
+		if *lsadvertiser {
+			lsadvertisers()
+			return
+		}
+		defer connection.Close()
+		row := connection.QueryRow("SELECT advertiser_id, display_name, logon_name FROM advertiser WHERE advertiser_id=?", conf.Extension.Anwo.Advertiser_id)
+		err = row.Scan(ad.Id(), ad.Name(), ad.Logon())
+		if err != nil {
+			if err == sql.ErrNoRows {
+				logger.Fatalln("No such user with that ID:", err)
+			} else {
+				logger.Fatalln("Failed to read Database:", err)
 			}
-			updateList()
-			time.Sleep(2 * time.Minute)
 		}
-	}()
+		go func() {
+			for {
+				if ad_groupid_list.size() > 100000 {
+					ad_groupid_list.flush()
+				}
+				updateList()
+				time.Sleep(2 * time.Minute)
+			}
+		}()
+	}
 	go func() {
 		signals := make(chan os.Signal, 1)
 		signal.Notify(signals, os.Kill, os.Interrupt)
