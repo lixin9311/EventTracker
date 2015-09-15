@@ -6,9 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/gorilla/mux"
-	"github.com/lixin9311/EventTracker/avro"
-	"github.com/lixin9311/EventTracker/config"
-	"github.com/lixin9311/EventTracker/kafka"
+	et "github.com/lixin9311/EventTracker/eventtracker"
 	"html/template"
 	"io"
 	"log"
@@ -17,7 +15,6 @@ import (
 	"net/rpc"
 	"os"
 	"strconv"
-	"strings"
 )
 
 var (
@@ -26,19 +23,13 @@ var (
 	// MaxMemorySize is the maximum memory size to handle the upload file
 	MaxMemorySize = int64(10 * 1024 * 1024)
 	logger        *log.Logger
-	conf          *config.Config
+	conf          *et.Config
 	configFile    = flag.String("c", "config.json", "Config file in json.")
-	brokers       = flag.String("brokers", "", "kafka brokers, this overrides config file.")
-	topic         = flag.String("topic", "", "kafka topics, the order is default, activation, registration, order, split with comma, this overrides config file.")
-	partitioner   = flag.String("partitioner", "", "kafka partitioner, this overrides config file.")
-	partition     = flag.String("partition", "", "kafka partition, this overrides config file.")
-	schema        = flag.String("schema", "", "avro schema file, this overrides config file.")
-	port          = flag.String("port", "", "http listen port, this overrides config file.")
-	logfile       = flag.String("log", "", "logfile, this overrides config file.")
-	bakfile       = flag.String("bakfile", "", "backup file, for fail safety when kafka write fails, this overrides config file.")
 	// Fail safe buffer file
 	fail_safe *log.Logger
 	address   []string
+	kafka     *et.Kafka
+	avro      *et.Avro
 )
 
 // HomeHandler is the index page for upload the csv file
@@ -250,48 +241,15 @@ func EventHandler(w http.ResponseWriter, r *http.Request) {
 func init() {
 	flag.Parse()
 	// open config
-	conf = config.ParseConfig(*configFile)
+	conf = et.ParseConfig(*configFile)
 	logger = log.New(os.Stderr, "[main]:", log.LstdFlags|log.Lshortfile)
 	// parse flags and override the config file
-	if *brokers != "" {
-		conf.KafkaSetting["brokers"] = *brokers
-	}
-	if *topic != "" {
-		topic_data := map[string](interface{}){}
-		topic_strs := strings.Split(*topic, ",")
-		if len(topic_strs) != 4 {
-			logger.Fatalln("Failed to parse flags: Not enough topics:", *topic)
-		}
-		topic_data["default"] = topic_strs[0]
-		topic_data["activation"] = topic_strs[1]
-		topic_data["registration"] = topic_strs[2]
-		topic_data["order"] = topic_strs[3]
-		conf.KafkaSetting["topic"] = topic_data
-	}
-	if *partitioner != "" {
-		conf.KafkaSetting["partitioner"] = *partitioner
-	}
-	if *partition != "" {
-		conf.KafkaSetting["partition"] = *partition
-	}
-	if *schema != "" {
-		conf.AvroSetting["schema"] = *schema
-	}
-	if *logfile != "" {
-		conf.MainSetting["logfile"] = *logfile
-	}
-	if *port != "" {
-		conf.MainSetting["port"] = *port
-	}
-	if *bakfile != "" {
-		conf.MainSetting["bakfile"] = *bakfile
-	}
-	safe_file, err := os.OpenFile(conf.MainSetting["bakfile"], os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	safe_file, err := os.OpenFile(conf.Main.Backup_file, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		logger.Fatalln("Failed to open backup file:", err)
 	}
 	fail_safe = log.New(safe_file, "", log.LstdFlags)
-	file, err := os.OpenFile(conf.MainSetting["logfile"], os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	file, err := os.OpenFile(conf.Main.Log_file, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		logger.Fatalln("Failed to open log file:", err)
 	}
@@ -300,9 +258,9 @@ func init() {
 	logger.SetOutput(w)
 	logger.Println("========== Loading Config Complete ==========")
 	// init avro
-	avro.Init(w, conf.AvroSetting)
+	avro = et.NewAvroInst(w, conf.Avro)
 	// init kafka
-	kafka.Init(w, conf.KafkaSetting)
+	kafka = et.NewKafkaInst(w, conf.Kafka)
 }
 
 func main() {
@@ -318,17 +276,17 @@ func main() {
 	r.HandleFunc("/ping", PingHandler)
 	// bring up the service
 	var ln net.Listener
-	if conf.FrontSetting["enable"].(bool) == true {
+	if conf.Front.Enabled == true {
 		logger.Println("Using a Front server.")
-		ln, err = net.Listen("tcp", conf.FrontSetting["backend_http_listen_address"].(string))
+		ln, err = net.Listen("tcp", conf.Front.Backend_http_listen_addr)
 		if err != nil {
 			logger.Fatalln("Failed to listen:", err)
 		}
 		logger.Println("Http server listening a random local port at:", ln.Addr())
 		go func() {
 			// reg service to front
-			logger.Println("Registering service to front server:", conf.FrontSetting["address"].(string))
-			conn, err := net.Dial("tcp", conf.FrontSetting["address"].(string))
+			logger.Println("Registering service to front server:", conf.Front.Service_reg_addr)
+			conn, err := net.Dial("tcp", conf.Front.Service_reg_addr)
 			if err != nil {
 				logger.Fatalln("Failed to connect to the front service:", err)
 			}
@@ -347,8 +305,8 @@ func main() {
 		}()
 		defer func() {
 			// reg service to front
-			logger.Println("Unsigning service to front server:", conf.FrontSetting["address"].(string))
-			conn, err := net.Dial("tcp", conf.FrontSetting["address"].(string))
+			logger.Println("Unsigning service to front server:", conf.Front.Service_reg_addr)
+			conn, err := net.Dial("tcp", conf.Front.Service_reg_addr)
 			if err != nil {
 				logger.Fatalln("Failed to connect to the front service:", err)
 			}
@@ -365,7 +323,7 @@ func main() {
 			logger.Println("Gracefully unsigned from front serive.")
 		}()
 	} else {
-		ln, err = net.Listen("tcp", ":"+conf.MainSetting["port"])
+		ln, err = net.Listen("tcp", conf.Main.Http_listen_addr)
 		if err != nil {
 			logger.Fatalln("Fail to listen:", err)
 		}

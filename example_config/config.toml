@@ -1,0 +1,33 @@
+title = "TOML Config Example"
+
+[main]
+http_listen_addr = "0.0.0.0:8080"
+log_file = "tracker.log"
+backup_file = "backup.log"
+
+[kafka]
+brokers = ["localhost:9092"]
+partitioner = "hash"
+partition = -1
+[kafka.topics]
+default = "default"
+activation = "activation"
+order = "order"
+registration = "registration"
+
+[avro]
+schema = "event.avsc"
+
+[front]
+enabled = false
+service_reg_addr = "127.0.0.1:8081"
+backend_http_listen_addr = "127.0.0.1:0"
+
+[extension]
+[extension.anwo]
+kafka_clk_topic = "anwo"
+db_server = "127.0.0.1"
+db_port = "5433"
+db_user = "user"
+db_pwd = "password"
+db = "bigtree"
