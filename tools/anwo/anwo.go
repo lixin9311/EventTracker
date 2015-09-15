@@ -199,6 +199,12 @@ func readKafka() {
 			logger.Println("Failed to get timestamp:", err)
 			continue
 		}
+		t, err := time.Parse(time.RFC3339, cts.(string))
+		if err != nil {
+			logger.Println("Failed to parse time from kafka:", err)
+			continue
+		}
+		cts = fmt.Sprintf("%d", t.UTC().UnixNano()/1000000)
 		ext, err := record.Get("extension")
 		if err != nil {
 			logger.Println("Failed to get extension:", err)
@@ -239,10 +245,6 @@ func readKafka() {
 
 	}
 
-}
-
-func PingHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "Pong")
 }
 
 func ErrorAndReturnCode(w http.ResponseWriter, errstr string, code int) {
@@ -365,7 +367,7 @@ func serve_http() {
 	// REST route
 	r := mux.NewRouter()
 	r.HandleFunc("/anwo", EventHandler)
-	r.HandleFunc("/ping", PingHandler)
+	r.HandleFunc("/ping", et.PingHandler)
 	// bring up the service
 	var ln net.Listener
 	if conf.Front.Enabled == true {
@@ -450,7 +452,7 @@ func init() {
 
 func main() {
 	var err error
-	db_str := fmt.Sprintf("Servername=%s;Port=%s;Locale=en_US;Database=%s;UID=%s;PWD=%s;Driver=//opt//vertica//lib64//libverticaodbc.so;", conf.Extension.Anwo.Db_server, conf.Extension.Anwo.Db_port, conf.Extension.Anwo.Db, conf.Extension.Anwo.Db_user, conf.Extension.Anwo.Db_pwd)
+	db_str := fmt.Sprintf("Servername=%s;Port=%d;Locale=en_US;Database=%s;UID=%s;PWD=%s;Driver=//opt//vertica//lib64//libverticaodbc.so;", conf.Extension.Anwo.Db_server, conf.Extension.Anwo.Db_port, conf.Extension.Anwo.Db, conf.Extension.Anwo.Db_user, conf.Extension.Anwo.Db_pwd)
 	connection, err = sql.Open("odbc", db_str)
 	if err != nil {
 		logger.Fatalln("Failed to open:", err)
