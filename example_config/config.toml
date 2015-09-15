@@ -31,3 +31,4 @@ db_port = "5433"
 db_user = "user"
 db_pwd = "password"
 db = "bigtree"
+advertiser_id = 1

@@ -3,7 +3,7 @@ package main
 import (
 	"errors"
 	"flag"
-	"github.com/lixin9311/EventTracker/config"
+	et "github.com/lixin9311/EventTracker/eventtracker"
 	"io"
 	"io/ioutil"
 	"log"
@@ -22,11 +22,8 @@ import (
 var (
 	handle     = new(Handle)
 	logger     *log.Logger
-	conf       *config.Config
+	conf       *et.Config
 	configFile = flag.String("c", "config.json", "Config file in json.")
-	httpPort   = flag.String("http_port", "", "Http listen port.")
-	rpcAddress = flag.String("rpc_address", "", "RPC service registration address.")
-	logfile    = flag.String("log", "", "logfile.")
 	force      = flag.Bool("F", false, "Force enable.")
 	balance    = flag.Bool("B", false, "Load Balance.")
 	counter    = uint64(0)
@@ -230,8 +227,8 @@ func (h *Handle) Ping() {
 }
 
 func startService() {
-	logger.Println("Front server started, http service listening:", conf.MainSetting["port"])
-	err := http.ListenAndServe(":"+conf.MainSetting["port"], handle)
+	logger.Println("Front server started, http service listening:", conf.Main.Http_listen_addr)
+	err := http.ListenAndServe(conf.Main.Http_listen_addr, handle)
 	if err != nil {
 		logger.Fatalln("Failed to listen:", err)
 	}
@@ -240,38 +237,27 @@ func startService() {
 func startRPC() {
 	rpcServer := rpc.NewServer()
 	rpcServer.Register(handle)
-	l, err := net.Listen("tcp", conf.FrontSetting["address"].(string))
+	l, err := net.Listen("tcp", conf.Front.Service_reg_addr)
 	if err != nil {
 		logger.Fatalln("Failed to start RPC service:", err)
 	}
-	logger.Println("Front server started, reg service listening:", conf.FrontSetting["address"].(string))
+	logger.Println("Front server started, reg service listening:", conf.Front.Service_reg_addr)
 	rpcServer.Accept(l)
 }
 
 func init() {
 	flag.Parse()
-	conf = config.ParseConfig(*configFile)
+	conf = et.ParseConfig(*configFile)
 	logger = log.New(os.Stderr, "[front]:", log.LstdFlags|log.Lshortfile)
-	if *logfile != "" {
-		conf.MainSetting["logfile"] = *logfile
-	}
-	if *httpPort != "" {
-		conf.MainSetting["port"] = *httpPort
-	}
-	if *rpcAddress != "" {
-		conf.FrontSetting["address"] = *rpcAddress
-	}
-	if *force {
-		conf.FrontSetting["enable"] = true
-	}
-	file, err := os.OpenFile(conf.MainSetting["logfile"], os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	file, err := os.OpenFile(conf.Main.Log_file, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		logger.Fatalln("Failed to open log file:", err)
 	}
 	w := io.MultiWriter(file, os.Stderr)
 	logger.SetOutput(w)
-	if !conf.FrontSetting["enable"].(bool) {
-		logger.Fatalln("Front service is not enabled, use -F to force.")
+	if !conf.Front.Enabled {
+		logger.Fatalln("Front service is not enabled.")
+		os.Exit(0)
 	}
 }
 

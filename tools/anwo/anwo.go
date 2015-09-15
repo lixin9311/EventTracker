@@ -8,9 +8,7 @@ import (
 	"fmt"
 	_ "github.com/alexbrainman/odbc"
 	"github.com/gorilla/mux"
-	"github.com/lixin9311/EventTracker/avro"
-	"github.com/lixin9311/EventTracker/config"
-	"github.com/lixin9311/EventTracker/kafka"
+	et "github.com/lixin9311/EventTracker/eventtracker"
 	"github.com/lixin9311/tablewriter"
 	"io"
 	"io/ioutil"
@@ -28,15 +26,8 @@ import (
 var (
 	configFile      = flag.String("c", "config.json", "config file.")
 	DEBUG           = flag.Bool("D", false, "DEBUG.")
-	conf            *config.Config
 	lsadvertiser    = flag.Bool("ls", false, "list advertisers.")
-	advertiser_id   = flag.Int64("id", -1, "advertiser id.")
-	topic           = flag.String("t", "event", "topic to use.")
-	pwd             = flag.String("p", "", "database password.")
-	user            = flag.String("u", "", "database user.")
-	server          = flag.String("server", "", "database server.")
-	dbport          = flag.String("dbport", "", "database port.")
-	db              = flag.String("db", "", "database.")
+	conf            *et.Config
 	connection      *sql.DB
 	ad              = advertiser{}
 	ad_groupid_list = ad_group_id_list{data: map[int64](struct{}){}}
@@ -45,17 +36,11 @@ var (
 	closing         = make(chan struct{})
 	transport       = http.Transport{MaxIdleConnsPerHost: 200}
 	client          = &http.Client{Transport: &transport}
-	// MaxMemorySize is the maximum memory size to handle the upload file
-	brokers     = flag.String("brokers", "", "kafka brokers, this overrides config file.")
-	partitioner = flag.String("partitioner", "", "kafka partitioner, this overrides config file.")
-	partition   = flag.String("partition", "", "kafka partition, this overrides config file.")
-	schema      = flag.String("schema", "", "avro schema file, this overrides config file.")
-	port        = flag.String("port", "", "http listen port, this overrides config file.")
-	logfile     = flag.String("log", "", "logfile, this overrides config file.")
-	bakfile     = flag.String("bakfile", "", "backup file, for fail safety when kafka write fails, this overrides config file.")
 	// Fail safe buffer file
 	fail_safe *log.Logger
 	address   []string
+	kafka     *et.Kafka
+	avro      *et.Avro
 )
 
 type ad_group_id_list struct {
@@ -383,17 +368,17 @@ func serve_http() {
 	r.HandleFunc("/ping", PingHandler)
 	// bring up the service
 	var ln net.Listener
-	if conf.FrontSetting["enable"].(bool) == true {
+	if conf.Front.Enabled == true {
 		logger.Println("Using a Front server.")
-		ln, err = net.Listen("tcp", conf.FrontSetting["backend_http_listen_address"].(string))
+		ln, err = net.Listen("tcp", conf.Front.Backend_http_listen_addr)
 		if err != nil {
 			logger.Fatalln("Failed to listen:", err)
 		}
 		logger.Println("Http server listening a random local port at:", ln.Addr())
 		go func() {
 			// reg service to front
-			logger.Println("Registering service to front server:", conf.FrontSetting["address"].(string))
-			conn, err := net.Dial("tcp", conf.FrontSetting["address"].(string))
+			logger.Println("Registering service to front server:", conf.Front.Service_reg_addr)
+			conn, err := net.Dial("tcp", conf.Front.Service_reg_addr)
 			if err != nil {
 				logger.Fatalln("Failed to connect to the front service:", err)
 			}
@@ -412,8 +397,8 @@ func serve_http() {
 		}()
 		defer func() {
 			// reg service to front
-			logger.Println("Unsigning service to front server:", conf.FrontSetting["address"].(string))
-			conn, err := net.Dial("tcp", conf.FrontSetting["address"].(string))
+			logger.Println("Unsigning service to front server:", conf.Front.Service_reg_addr)
+			conn, err := net.Dial("tcp", conf.Front.Service_reg_addr)
 			if err != nil {
 				logger.Fatalln("Failed to connect to the front service:", err)
 			}
@@ -430,7 +415,7 @@ func serve_http() {
 			logger.Println("Gracefully unsigned from front serive.")
 		}()
 	} else {
-		ln, err = net.Listen("tcp", ":"+conf.MainSetting["port"])
+		ln, err = net.Listen("tcp", conf.Main.Http_listen_addr)
 		if err != nil {
 			logger.Fatalln("Fail to listen:", err)
 		}
@@ -445,34 +430,13 @@ func serve_http() {
 func init() {
 	flag.Parse()
 	var err error
-	conf = config.ParseConfig(*configFile)
+	conf = et.ParseConfig(*configFile)
 	logger = log.New(os.Stderr, "[main]:", log.LstdFlags|log.Lshortfile)
-	if *brokers != "" {
-		conf.KafkaSetting["brokers"] = *brokers
-	}
-	if *partitioner != "" {
-		conf.KafkaSetting["partitioner"] = *partitioner
-	}
-	if *partition != "" {
-		conf.KafkaSetting["partition"] = *partition
-	}
-	if *schema != "" {
-		conf.AvroSetting["schema"] = *schema
-	}
-	if *logfile != "" {
-		conf.MainSetting["logfile"] = *logfile
-	}
-	if *port != "" {
-		conf.MainSetting["port"] = *port
-	}
-	if *bakfile != "" {
-		conf.MainSetting["bakfile"] = *bakfile
-	}
-	file, err := os.OpenFile(conf.MainSetting["logfile"], os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	file, err := os.OpenFile(conf.Main.Log_file, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		logger.Fatalln("Failed to open log file:", err)
 	}
-	safe_file, err := os.OpenFile(conf.MainSetting["bakfile"], os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	safe_file, err := os.OpenFile(conf.Main.Backup_file, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		logger.Fatalln("Failed to open backup file:", err)
 	}
@@ -480,13 +444,13 @@ func init() {
 	w := io.MultiWriter(file, os.Stderr)
 	logger.SetOutput(w)
 	logger.Println("======== Loading Config Complete ========")
-	avro.Init(w, conf.AvroSetting)
-	kafka.Init(w, conf.KafkaSetting)
+	avro = et.NewAvroInst(w, conf.Avro)
+	kafka = et.NewKafkaInst(w, conf.Kafka)
 }
 
 func main() {
 	var err error
-	db_str := fmt.Sprintf("Servername=%s;Port=%s;Locale=en_US;Database=%s;UID=%s;PWD=%s;Driver=//opt//vertica//lib64//libverticaodbc.so;", *server, *dbport, *db, *user, *pwd)
+	db_str := fmt.Sprintf("Servername=%s;Port=%s;Locale=en_US;Database=%s;UID=%s;PWD=%s;Driver=//opt//vertica//lib64//libverticaodbc.so;", conf.Extension.Anwo.Db_server, conf.Extension.Anwo.Db_port, conf.Extension.Anwo.Db, conf.Extension.Anwo.Db_user, conf.Extension.Anwo.Db_pwd)
 	connection, err = sql.Open("odbc", db_str)
 	if err != nil {
 		logger.Fatalln("Failed to open:", err)
@@ -496,12 +460,7 @@ func main() {
 		return
 	}
 	defer connection.Close()
-	if *advertiser_id == -1 {
-		logger.Println("Missing advertiser_id")
-		flag.PrintDefaults()
-		os.Exit(2)
-	}
-	row := connection.QueryRow("SELECT advertiser_id, display_name, logon_name FROM advertiser WHERE advertiser_id=?", *advertiser_id)
+	row := connection.QueryRow("SELECT advertiser_id, display_name, logon_name FROM advertiser WHERE advertiser_id=?", conf.Extension.Anwo.Advertiser_id)
 	err = row.Scan(ad.Id(), ad.Name(), ad.Logon())
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -528,7 +487,7 @@ func main() {
 		time.Sleep(time.Second)
 		os.Exit(0)
 	}()
-	go kafka.Consumer(*topic, messages, closing)
+	go kafka.NewConsumer(conf.Extension.Anwo.Kafka_clk_topic, messages, closing)
 	go serve_http()
 	readKafka()
 	//	var p person

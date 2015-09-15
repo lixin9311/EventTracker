@@ -6,9 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/lixin9311/EventTracker/avro"
-	"github.com/lixin9311/EventTracker/config"
-	"github.com/lixin9311/EventTracker/kafka"
+	et "github.com/lixin9311/EventTracker/eventtracker"
 	"io/ioutil"
 	"log"
 	"os"
@@ -20,6 +18,8 @@ var (
 	bakfile    = flag.String("i", "backup.log", "input backuofile")
 	failed     = 0
 	success    = 0
+	kafka      *et.Kafka
+	avro       *et.Avro
 )
 
 func readFromBackup() {
@@ -91,9 +91,9 @@ func readFromBackup() {
 
 func init() {
 	flag.Parse()
-	conf := config.ParseConfig(*configFile)
-	kafka.Init(os.Stderr, conf.KafkaSetting)
-	avro.Init(os.Stderr, conf.AvroSetting)
+	conf := et.ParseConfig(*configFile)
+	kafka = et.NewKafkaInst(os.Stderr, conf.Kafka)
+	avro = et.NewAvroInst(os.Stderr, conf.Avro)
 }
 
 func main() {
