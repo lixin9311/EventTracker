@@ -25,7 +25,8 @@ import (
 
 var (
 	configFile      = flag.String("c", "config.json", "config file.")
-	DEBUG           = flag.Bool("D", false, "DEBUG.")
+	DEBUG           = flag.Bool("D", false, "Enable Database.")
+	verbose         = flag.Bool("v", false, "Verbose")
 	lsadvertiser    = flag.Bool("ls", false, "list advertisers.")
 	conf            *et.Config
 	connection      *sql.DB
@@ -151,6 +152,10 @@ func updateList() {
 	if err := rows.Err(); err != nil {
 		logger.Println("Error occured when reading Database:", err)
 	}
+	if *verbose {
+		logger.Println("ad_group_id_list updated!")
+		ad_groupid_list.print()
+	}
 }
 
 func readKafka() {
@@ -193,7 +198,9 @@ func readKafka() {
 				continue
 			}
 		}
-		logger.Println("gid matched!:", record)
+		if *verbose {
+			logger.Println("gid matched!:", record)
+		}
 		aid, err := record.Get("aid")
 		if err != nil {
 			logger.Println("Failed to get aid:", err)
@@ -288,6 +295,10 @@ func EventHandler(w http.ResponseWriter, r *http.Request) {
 		remote = r.RemoteAddr
 	}
 	logger.Println("Incomming event from:", remote)
+	if *verbose {
+		logger.Println("Request params:")
+		logger.Println(r.Form)
+	}
 	// required fields
 	if len(r.Form["appid"]) < 1 {
 		ErrorAndReturnCode(w, "Missing Required field: No appid", 400)
