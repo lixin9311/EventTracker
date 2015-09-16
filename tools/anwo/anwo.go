@@ -249,8 +249,8 @@ func readKafka() {
 			}
 		}
 		keywords := aid.(string)
-		pid := "pid"
-		base := "http://offer.adwo.com/offerwallcharge/clk"
+		pid := conf.Extension.Anwo.Pid
+		base := conf.Extension.Anwo.Api_url
 		url := fmt.Sprintf("%s?pid=%s&advid=%s&ip=%s&cts=%s&osv=%s&mobile=%s&idfa=%s&keywords=%s", base, pid, ext_map["adv_id"].(string), ip.(string), cts.(string), ext_map["os_version"].(string), ext_map["device_model"].(string), idfa.(string), keywords)
 		logger.Println(url)
 		go func(url string) {

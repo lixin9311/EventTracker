@@ -37,6 +37,8 @@ type extension_config_anwo struct {
 	Db_pwd          string
 	Db              string
 	Advertiser_id   int
+	Pid             string
+	Api_url         string
 }
 
 type extension_config struct {
