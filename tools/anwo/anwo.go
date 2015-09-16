@@ -258,7 +258,8 @@ func readKafka() {
 		keywords := aid.(string)
 		pid := conf.Extension.Anwo.Pid
 		base := conf.Extension.Anwo.Api_url
-		url := fmt.Sprintf("%s?pid=%s&advid=%s&ip=%s&cts=%s&osv=%s&mobile=%s&idfa=%s&keywords=%s", base, pid, ext_map["adv_id"].(string), ip.(string), cts.(string), ext_map["os_version"].(string), ext_map["device_model"].(string), idfa.(string), keywords)
+		mac := "AABBCCDDEEFF"
+		url := fmt.Sprintf("%s?pid=%s&advid=%s&ip=%s&cts=%s&osv=%s&mobile=%s&idfa=%s&mac=%s&keywords=%s", base, pid, ext_map["adv_id"].(string), ip.(string), cts.(string), ext_map["os_version"].(string), ext_map["device_model"].(string), idfa.(string), mac, keywords)
 		logger.Println(url)
 		go func(url string) {
 			request, err := http.NewRequest("GET", url, nil)
