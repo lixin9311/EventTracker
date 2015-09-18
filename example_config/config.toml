@@ -1,14 +1,18 @@
 [main]
-http_listen_addr = "0.0.0.0:8080"
+# 最前方的反向代理，接受http请求，然后转发到已经注册的后端服务
+http_listen_addr = "0.0.0.0:8082"
 log_file = "tracker.log"
 backup_file = "backup.log"
 
 [kafka]
-brokers = ["localhost:9092"]
+brokers = ["big00:9092", "bid00:9092", "bid01:9092"]
 partitioner = "hash"
 partition = -1
+
 [kafka.topics]
-default = "default"
+# 第三步：接收安沃转化回调，写入这个kafka topic
+# 只有default对安沃有用
+default = "anwo_postback"
 activation = "activation"
 order = "order"
 registration = "registration"
@@ -17,13 +21,19 @@ registration = "registration"
 schema = "event.avsc"
 
 [front]
-enabled = true
+# 启用反向代理
+enabled = true # 启用
+# 后端服务向front注册服务用的端口
 service_reg_addr = "127.0.0.1:8081"
+# 后端服务的监听地址，0端口是随机选取一个可用的
 backend_http_listen_addr = "127.0.0.1:0"
 
 [extension]
 [extension.anwo]
-kafka_clk_topic = "anwo"
+# 第一步：rtb发给click topic
+# 第二步：订阅click topic过滤出安沃的adgroup转发给安沃
+# 现在已经不用数据库了，DB字段有空清理掉
+kafka_clk_topic = "click_anwo"
 db_server = "127.0.0.1"
 db_port = 5433
 db_user = "user"
@@ -31,6 +41,6 @@ db_pwd = "password"
 db = "bigtree"
 advertiser_id = 1
 api_url = "http://offer.adwo.com/iofferwallcharge/clk"
-pid = "12312"
-key = "key"
-td_postback_url = "http://bigtree.com/td_postback"
+pid = "123456"
+key = "abcdefg"
+td_postback_url = "http://bigtree.mobi/td_postback"
