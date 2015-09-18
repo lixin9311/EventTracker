@@ -196,7 +196,7 @@ func EventHandler(w http.ResponseWriter, r *http.Request) {
 	if fmt.Sprintf("%x", crypted) != strings.Split(r.Form["sign"][0], ",")[0] {
 		logger.Printf("Sign not matched!: %x :%s\n", crypted, r.Form["sign"][0])
 		if !*sign_check {
-			logger.Println("Sign check enabled, abort.")
+			ErrorAndReturnCode(w, "Sign mismatched!", 400)
 			return
 		}
 	}
