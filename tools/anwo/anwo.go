@@ -3,13 +3,10 @@ package main
 import (
 	"bytes"
 	"crypto/md5"
-	"database/sql"
 	"flag"
 	"fmt"
-	_ "github.com/alexbrainman/odbc"
 	"github.com/gorilla/mux"
 	et "github.com/lixin9311/EventTracker/eventtracker"
-	"github.com/lixin9311/tablewriter"
 	"io"
 	"io/ioutil"
 	"log"
@@ -19,144 +16,27 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
-	"sync"
+	"strings"
 	"time"
 )
 
 var (
-	configFile      = flag.String("c", "config.json", "config file.")
-	DEBUG           = flag.Bool("D", false, "Enable Database.")
-	verbose         = flag.Bool("v", false, "Verbose")
-	lsadvertiser    = flag.Bool("ls", false, "list advertisers.")
-	conf            *et.Config
-	connection      *sql.DB
-	ad              = advertiser{}
-	ad_groupid_list = ad_group_id_list{data: map[int64](struct{}){}}
-	logger          *log.Logger
-	messages        = make(chan []byte, 128)
-	closing         = make(chan struct{})
-	transport       = http.Transport{MaxIdleConnsPerHost: 200}
-	client          = &http.Client{Transport: &transport}
+	configFile   = flag.String("c", "config.json", "config file.")
+	verbose      = flag.Bool("v", false, "Verbose")
+	sign_check   = flag.Bool("f", false, "Force pass sign check.")
+	lsadvertiser = flag.Bool("ls", false, "list advertisers.")
+	conf         *et.Config
+	logger       *log.Logger
+	messages     = make(chan []byte, 128)
+	closing      = make(chan struct{})
+	transport    = http.Transport{MaxIdleConnsPerHost: 200}
+	client       = &http.Client{Transport: &transport}
 	// Fail safe buffer file
 	fail_safe *log.Logger
 	address   []string
 	kafka     *et.Kafka
 	avro      *et.Avro
 )
-
-type ad_group_id_list struct {
-	sync.Mutex
-	data map[int64]struct{}
-}
-
-func (self *ad_group_id_list) size() int {
-	return len(self.data)
-}
-
-func (self *ad_group_id_list) print() {
-	logger.Println(self.data)
-}
-
-func (self *ad_group_id_list) flush() {
-	self.Lock()
-	defer self.Unlock()
-	self.data = map[int64](struct{}){}
-}
-
-func (self *ad_group_id_list) put(id int64) {
-	self.Lock()
-	defer self.Unlock()
-	self.data[id] = struct{}{}
-}
-
-func (self *ad_group_id_list) put_unsafe(id int64) {
-	self.data[id] = struct{}{}
-}
-
-func (self *ad_group_id_list) get(id int64) bool {
-	self.Lock()
-	defer self.Unlock()
-	if _, ok := self.data[id]; ok {
-		return true
-	}
-	return false
-}
-
-type advertiser struct {
-	advertiser_id int64
-	display_name  string
-	logon_name    string
-}
-
-func (self *advertiser) Id() *int64 {
-	return &self.advertiser_id
-}
-
-func (self *advertiser) Name() *string {
-	return &self.display_name
-}
-
-func (self *advertiser) Logon() *string {
-	return &self.logon_name
-}
-
-func (self advertiser) String() string {
-	return fmt.Sprintf("Id: %d, Name: %s, Logon name: %s.", self.advertiser_id, self.display_name, self.logon_name)
-}
-
-func (self advertiser) Array() []string {
-	return []string{fmt.Sprintf("%d", self.advertiser_id), fmt.Sprintf("%s", self.display_name), fmt.Sprintf("%s", self.logon_name)}
-}
-
-func lsadvertisers() {
-	rows, err := connection.Query("SELECT advertiser_id, display_name, Logon_name FROM advertiser;")
-	defer rows.Close()
-	if err != nil {
-		logger.Fatal("Failed to query the Database:", err)
-	}
-	cols, err := rows.Columns()
-	if err != nil {
-		logger.Fatal("Failed to read columns from Database:", err)
-	}
-	table := tablewriter.NewWriter(os.Stdout)
-	table.SetAlignment(tablewriter.ALIGN_RIGHT)
-	table.SetHeader(cols)
-	advertisers := make([]*advertiser, 0)
-	for rows.Next() {
-		ader := new(advertiser)
-		if err := rows.Scan(ader.Id(), ader.Name(), ader.Logon()); err != nil {
-			logger.Fatal("Failed to read Database:", err)
-		}
-		advertisers = append(advertisers, ader)
-		table.Append(ader.Array())
-	}
-	if err := rows.Err(); err != nil {
-		logger.Println("Error occured when reading database:", err)
-	}
-	table.Render()
-	return
-}
-
-func updateList() {
-	rows, err := connection.Query("SELECT ad_group_id FROM ad_group INNER JOIN campaign ON ad_group.campaign_id=campaign.campaign_id WHERE campaign.advertiser_id=?", *ad.Id())
-	ad_group_id := int64(0)
-	if err != nil {
-		logger.Fatal("Failed to query Database:", err)
-	}
-	ad_groupid_list.Lock()
-	defer ad_groupid_list.Unlock()
-	for rows.Next() {
-		rows.Scan(&ad_group_id)
-		ad_groupid_list.put_unsafe(ad_group_id)
-	}
-	if err := rows.Err(); err != nil {
-		logger.Println("Error occured when reading Database:", err)
-	}
-	if *verbose {
-		logger.Println("ad_group_id_list updated!")
-		ad_groupid_list.print()
-	}
-}
 
 func readKafka() {
 	for {
@@ -170,40 +50,23 @@ func readKafka() {
 		if event.(string) != "click" {
 			continue
 		}
-		gid, err := record.Get("gid")
+		ext, err := record.Get("extension")
 		if err != nil {
-			logger.Println("Failed to get ad_group_id:", err)
+			logger.Println("Failed to get extension:", err)
 			continue
 		}
-		switch gid.(type) {
-		case string:
-			// got u
-		case nil:
-			logger.Println("gid doee not exist.")
-			continue
-		default:
-			logger.Println("Unknow type of gid after avro decode:", gid)
+		ext_map, ok := ext.(map[string]interface{})
+		if !ok {
+			logger.Println("Failed convert extesion to map.")
 			continue
 		}
-		if *DEBUG {
-
-			id, err := strconv.ParseInt(gid.(string), 10, 64)
-			if err != nil {
-				log.Printf("Failed to parse string(%s) to int: %s", gid.(string), err)
-				continue
-			}
-			if !ad_groupid_list.get(id) {
-				//if false {
-				logger.Println("The gid does not match!")
-				continue
-			}
+		if _, ok := ext_map["adv_id"]; !ok {
+			logger.Println("Not found adv_id in ext_map. Maybe not an adwo ad.")
+			continue
 		}
-		if *verbose {
-			logger.Println("gid matched!:", record)
-		}
-		aid, err := record.Get("aid")
+		id, err := record.Get("id")
 		if err != nil {
-			logger.Println("Failed to get aid:", err)
+			logger.Println("Failed to get auction_id:", err)
 			continue
 		}
 		idfa, err := record.Get("did")
@@ -228,16 +91,6 @@ func readKafka() {
 			continue
 		}
 		cts = fmt.Sprintf("%d", t.UTC().UnixNano()/1000000)
-		ext, err := record.Get("extension")
-		if err != nil {
-			logger.Println("Failed to get extension:", err)
-			continue
-		}
-		ext_map := ext.(map[string]interface{})
-		if _, ok := ext_map["adv_id"]; !ok {
-			logger.Println("Not found adv_id in ext_map.")
-			continue
-		}
 		if _, ok := ext_map["os_version"]; !ok {
 			logger.Println("Not found os_version in ext_map.")
 			continue
@@ -255,7 +108,7 @@ func readKafka() {
 				ext_map[k] = "unknown"
 			}
 		}
-		keywords := aid.(string)
+		keywords := id.(string)
 		pid := conf.Extension.Anwo.Pid
 		base := conf.Extension.Anwo.Api_url
 		mac := "AABBCCDDEEFF"
@@ -340,8 +193,12 @@ func EventHandler(w http.ResponseWriter, r *http.Request) {
 	// set a new avro record
 	str := fmt.Sprintf("adid=%sadname=%sappid=%sdevice=%sidfa=%spoint=%sts=%skey=%s", r.Form["adid"][0], r.Form["adname"][0], r.Form["appid"][0], r.Form["device"][0], r.Form["idfa"][0], r.Form["point"][0], r.Form["ts"][0], conf.Extension.Anwo.Key)
 	crypted := md5.Sum([]byte(str))
-	if fmt.Sprintf("%x", crypted) != r.Form["sign"][0] {
+	if fmt.Sprintf("%x", crypted) != strings.Split(r.Form["sign"][0], ",")[0] {
 		logger.Printf("Sign not matched!: %x :%s\n", crypted, r.Form["sign"][0])
+		if !*sign_check {
+			logger.Println("Sign check enabled, abort.")
+			return
+		}
 	}
 	record, err := avro.NewRecord()
 	if err != nil {
@@ -352,7 +209,6 @@ func EventHandler(w http.ResponseWriter, r *http.Request) {
 	if len(r.Form["ip"]) > 0 {
 		record.Set("ip", r.Form["ip"][0])
 	}
-	record.Set("aid", r.Form["keyword"][0])
 
 	// set required fields
 	record.Set("did", r.Form["idfa"][0])
@@ -364,8 +220,8 @@ func EventHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	t := time.Unix(0, nsec*1000000)
 	record.Set("timestamp", t.Format(time.RFC3339))
-	record.Set("event", "TrackerEvent")
-	record.Set("id", "")
+	record.Set("id", r.Form["keyword"][0])
+	record.Set("event", "anwo_postback")
 	record.Set("os", "ios")
 	// extensions fields
 	extension := map[string](interface{}){}
@@ -388,13 +244,40 @@ func EventHandler(w http.ResponseWriter, r *http.Request) {
 		ErrorAndReturnCode(w, "Failed to encode avro record:"+err.Error(), 500)
 		return
 	}
+	url := fmt.Sprintf("%s?auctionid=%s", conf.Extension.Anwo.Td_postback_url, r.Form["keyword"][0])
+	go func(url string) {
+		request, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			logger.Println("Failed to create request:", err)
+			return
+		}
+		request.Header.Add("Connection", "keep-alive")
+		resp, err := client.Do(request)
+		if err != nil {
+			logger.Println("Failed to send clk to remote server:", err)
+			return
+		}
+		if resp.StatusCode != 200 {
+			logger.Println("Error when send td_postback:", resp.Status)
+			str, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				return
+			}
+			logger.Println("Resp body:", string(str))
+			resp.Body.Close()
+			return
+		}
+		io.Copy(ioutil.Discard, resp.Body)
+		resp.Body.Close()
+	}(url)
+
 	// send to kafka
 	part, offset, err := kafka.SendByteMessage(buf.Bytes(), "default")
 	if err != nil {
 		fail_safe.Println("error:", err)
 		fail_safe.Println("record:", record)
 		fail_safe.Println("data:", buf.Bytes())
-		ErrorAndReturnCode(w, "Failed to send message to kafka:"+err.Error()+"Data has been writen to a backup file. Please contact us.", 500)
+		ErrorAndReturnCode(w, "Failed to send message to kafka:"+err.Error()+"Data has been writen to a backup file. Please contact us.", 200)
 		return
 	}
 	// done
@@ -495,37 +378,6 @@ func init() {
 }
 
 func main() {
-	var err error
-	if *DEBUG {
-		db_str := fmt.Sprintf("Servername=%s;Port=%d;Locale=en_US;Database=%s;UID=%s;PWD=%s;Driver=//opt//vertica//lib64//libverticaodbc.so;", conf.Extension.Anwo.Db_server, conf.Extension.Anwo.Db_port, conf.Extension.Anwo.Db, conf.Extension.Anwo.Db_user, conf.Extension.Anwo.Db_pwd)
-		connection, err = sql.Open("odbc", db_str)
-		if err != nil {
-			logger.Fatalln("Failed to open:", err)
-		}
-		if *lsadvertiser {
-			lsadvertisers()
-			return
-		}
-		defer connection.Close()
-		row := connection.QueryRow("SELECT advertiser_id, display_name, logon_name FROM advertiser WHERE advertiser_id=?", conf.Extension.Anwo.Advertiser_id)
-		err = row.Scan(ad.Id(), ad.Name(), ad.Logon())
-		if err != nil {
-			if err == sql.ErrNoRows {
-				logger.Fatalln("No such user with that ID:", err)
-			} else {
-				logger.Fatalln("Failed to read Database:", err)
-			}
-		}
-		go func() {
-			for {
-				if ad_groupid_list.size() > 100000 {
-					ad_groupid_list.flush()
-				}
-				updateList()
-				time.Sleep(2 * time.Minute)
-			}
-		}()
-	}
 	go func() {
 		signals := make(chan os.Signal, 1)
 		signal.Notify(signals, os.Kill, os.Interrupt)
@@ -538,14 +390,4 @@ func main() {
 	go kafka.NewConsumer(conf.Extension.Anwo.Kafka_clk_topic, messages, closing)
 	go serve_http()
 	readKafka()
-	//	var p person
-	//	for rows.Next() {
-	//		if err := rows.Scan(p.Id(), p.Name(), p.Age()); err != nil {
-	//			logger.Fatalln("Failed to scan:", err)
-	//		}
-	//		logger.Println(p)
-	//	}
-	//	if err := rows.Err(); err != nil {
-	//		logger.Fatalln(err)
-	//	}
 }

@@ -40,6 +40,7 @@ type extension_config_anwo struct {
 	Pid             string
 	Api_url         string
 	Key             string
+	Td_postback_url string
 }
 
 type extension_config struct {

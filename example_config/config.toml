@@ -31,5 +31,6 @@ db_pwd = "password"
 db = "bigtree"
 advertiser_id = 1
 api_url = "http://offer.adwo.com/iofferwallcharge/clk"
-pid = "aaaaafffffffaaaaaffff112312312"
+pid = "12312"
 key = "key"
+td_postback_url = "http://bigtree.com/td_postback"
