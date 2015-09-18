@@ -32,3 +32,4 @@ db = "bigtree"
 advertiser_id = 1
 api_url = "http://offer.adwo.com/iofferwallcharge/clk"
 pid = "aaaaafffffffaaaaaffff112312312"
+key = "key"

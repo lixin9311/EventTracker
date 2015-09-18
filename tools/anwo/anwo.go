@@ -333,19 +333,15 @@ func EventHandler(w http.ResponseWriter, r *http.Request) {
 		ErrorAndReturnCode(w, "Missing Required field: No sign", 400)
 		return
 	}
-	if len(r.Form["keywords"]) < 1 {
-		ErrorAndReturnCode(w, "Missing Required field: No keywords", 400)
-		return
-	}
-	if len(r.Form["key"]) < 1 {
-		ErrorAndReturnCode(w, "Missing Required field: No key", 400)
+	if len(r.Form["keyword"]) < 1 {
+		ErrorAndReturnCode(w, "Missing Required field: No keyword", 400)
 		return
 	}
 	// set a new avro record
-	str := fmt.Sprintf("adid=%sadname=%sappid=%sdevice=%sidfa=%spoint=%sts=%skey=%s", r.Form["adid"][0], r.Form["adname"][0], r.Form["appid"][0], r.Form["device"][0], r.Form["idfa"][0], r.Form["point"][0], r.Form["ts"][0], r.Form["key"][0])
+	str := fmt.Sprintf("adid=%sadname=%sappid=%sdevice=%sidfa=%spoint=%sts=%skey=%s", r.Form["adid"][0], r.Form["adname"][0], r.Form["appid"][0], r.Form["device"][0], r.Form["idfa"][0], r.Form["point"][0], r.Form["ts"][0], conf.Extension.Anwo.Key)
 	crypted := md5.Sum([]byte(str))
 	if fmt.Sprintf("%x", crypted) != r.Form["sign"][0] {
-		log.Printf("Sign not matched!: %x :%s\n", crypted, r.Form["sign"][0])
+		logger.Printf("Sign not matched!: %x :%s\n", crypted, r.Form["sign"][0])
 	}
 	record, err := avro.NewRecord()
 	if err != nil {
@@ -356,7 +352,7 @@ func EventHandler(w http.ResponseWriter, r *http.Request) {
 	if len(r.Form["ip"]) > 0 {
 		record.Set("ip", r.Form["ip"][0])
 	}
-	record.Set("aid", r.Form["keywords"][0])
+	record.Set("aid", r.Form["keyword"][0])
 
 	// set required fields
 	record.Set("did", r.Form["idfa"][0])
@@ -366,7 +362,7 @@ func EventHandler(w http.ResponseWriter, r *http.Request) {
 		ErrorAndReturnCode(w, "Failed to parse ts:"+err.Error(), 500)
 		return
 	}
-	t := time.Unix(0, nsec)
+	t := time.Unix(0, nsec*1000000)
 	record.Set("timestamp", t.Format(time.RFC3339))
 	record.Set("event", "TrackerEvent")
 	record.Set("id", "")
@@ -374,12 +370,16 @@ func EventHandler(w http.ResponseWriter, r *http.Request) {
 	// extensions fields
 	extension := map[string](interface{}){}
 	for k, v := range r.Form {
-		if k != "ip" && k != "aid" && k != "idfa" && k != "timestamp" && k != "keywords" && k != "sign" && k != "key" {
+		if k != "ip" && k != "aid" && k != "idfa" && k != "timestamp" && k != "keyword" && k != "sign" && k != "ts" {
 			extension[k] = v[0]
 		}
 	}
 	if len(extension) != 0 {
 		record.Set("extension", extension)
+	}
+	if *verbose {
+		logger.Println("Record to write:")
+		logger.Println(record)
 	}
 	// encode avro
 	buf := new(bytes.Buffer)
