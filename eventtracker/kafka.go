@@ -84,7 +84,7 @@ func (self *Kafka) Destroy() {
 func (self *Kafka) NewConsumer(consumerGroup string, topics []string, zoo string) (consumer *consumergroup.ConsumerGroup, err error) {
 	var zoos []string
 	config := consumergroup.NewConfig()
-	config.Offsets.Initial = sarama.OffsetNewest
+	config.Offsets.Initial = sarama.OffsetOldest
 	config.Offsets.ProcessingTimeout = 10 * time.Second
 	zoos, config.Zookeeper.Chroot = kazoo.ParseConnectionString(zoo)
 	consumer, err = consumergroup.JoinConsumerGroup(consumerGroup, topics, zoos, config)

@@ -70,8 +70,15 @@ func readKafka() {
 			logger.Println("Failed convert extesion to map.")
 			continue
 		}
-		if _, ok := ext_map["adv_id"]; !ok {
+		if adv_id, ok := ext_map["adv_id"]; !ok {
 			logger.Println("Not found adv_id in ext_map. Maybe not an adwo ad.")
+			continue
+		} else if adv_id == nil || adv_id.(string) == "" {
+			if *verbose {
+				logger.Println("It should not happen.")
+				logger.Println(record)
+			}
+			logger.Println("adv_id not valid, maybe not an adwo ad.")
 			continue
 		}
 		id, err := record.Get("id")
