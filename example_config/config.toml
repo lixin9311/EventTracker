@@ -34,13 +34,9 @@ backend_http_listen_addr = "127.0.0.1:0"
 # 第二步：订阅click topic过滤出安沃的adgroup转发给安沃
 # 现在已经不用数据库了，DB字段有空清理掉
 kafka_clk_topic = "click_anwo"
-db_server = "127.0.0.1"
-db_port = 5433
-db_user = "user"
-db_pwd = "password"
-db = "bigtree"
-advertiser_id = 1
 api_url = "http://offer.adwo.com/iofferwallcharge/clk"
 pid = "123456"
 key = "abcdefg"
 td_postback_url = "http://bigtree.mobi/td_postback"
+kafka_consumer_group = "anwo.go"
+zookeeper = "localhost:2182"

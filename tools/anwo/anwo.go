@@ -39,9 +39,19 @@ var (
 )
 
 func readKafka() {
-	for {
+	consumer, err := kafka.NewConsumer(conf.Extension.Anwo.Kafka_consumer_group, strings.Split(conf.Extension.Anwo.Kafka_clk_topic, ","), conf.Extension.Anwo.Zookeeper)
+	if err != nil {
+		log.Fatalln("Failed to create kafka consumer.")
+	}
+	defer consumer.Close()
+	go func() {
+		for err := range consumer.Errors() {
+			logger.Println("Error occured when consume kafka:", err)
+		}
+	}()
+	for message := range consumer.Messages() {
 		buffer := new(bytes.Buffer)
-		buffer.Write(<-messages)
+		buffer.Write(message.Value)
 		record, err := avro.Decode(buffer)
 		event, err := record.Get("event")
 		if err != nil {
@@ -244,7 +254,7 @@ func EventHandler(w http.ResponseWriter, r *http.Request) {
 		ErrorAndReturnCode(w, "Failed to encode avro record:"+err.Error(), 500)
 		return
 	}
-	url := fmt.Sprintf("%s?auctionid=%s", conf.Extension.Anwo.Td_postback_url, r.Form["keyword"][0])
+	url := fmt.Sprintf("%s?params=%s", conf.Extension.Anwo.Td_postback_url, r.Form["keyword"][0])
 	go func(url string) {
 		request, err := http.NewRequest("GET", url, nil)
 		if err != nil {
@@ -387,7 +397,6 @@ func main() {
 		time.Sleep(time.Second)
 		os.Exit(0)
 	}()
-	go kafka.NewConsumer(conf.Extension.Anwo.Kafka_clk_topic, messages, closing)
 	go serve_http()
 	readKafka()
 }

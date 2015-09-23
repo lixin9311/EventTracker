@@ -30,17 +30,13 @@ type front_config struct {
 }
 
 type extension_config_anwo struct {
-	Kafka_clk_topic string
-	Db_server       string
-	Db_port         int
-	Db_user         string
-	Db_pwd          string
-	Db              string
-	Advertiser_id   int
-	Pid             string
-	Api_url         string
-	Key             string
-	Td_postback_url string
+	Kafka_clk_topic      string
+	Pid                  string
+	Api_url              string
+	Key                  string
+	Td_postback_url      string
+	Kafka_consumer_group string
+	Zookeeper            string
 }
 
 type extension_config struct {

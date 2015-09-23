@@ -2,9 +2,11 @@ package eventtracker
 
 import (
 	"github.com/Shopify/sarama"
+	"github.com/wvanbergen/kafka/consumergroup"
+	"github.com/wvanbergen/kazoo-go"
 	"io"
 	"log"
-	"sync"
+	"time"
 )
 
 const (
@@ -79,35 +81,15 @@ func (self *Kafka) Destroy() {
 	}
 }
 
-func (self *Kafka) NewConsumer(topic string, messages chan<- []byte, closing <-chan struct{}) {
-	var wg sync.WaitGroup
-	consumer, err := sarama.NewConsumer(self.brokerlist, nil)
+func (self *Kafka) NewConsumer(consumerGroup string, topics []string, zoo string) (consumer *consumergroup.ConsumerGroup, err error) {
+	var zoos []string
+	config := consumergroup.NewConfig()
+	config.Offsets.Initial = sarama.OffsetNewest
+	config.Offsets.ProcessingTimeout = 10 * time.Second
+	zoos, config.Zookeeper.Chroot = kazoo.ParseConnectionString(zoo)
+	consumer, err = consumergroup.JoinConsumerGroup(consumerGroup, topics, zoos, config)
 	if err != nil {
-		self.logger.Println("Failed to create consumer:", err)
 		return
 	}
-	partitionList, err := consumer.Partitions(topic)
-	if err != nil {
-		self.logger.Println("Failed to get partitions:", err)
-		return
-	}
-	for _, partition := range partitionList {
-		pc, err := consumer.ConsumePartition(topic, partition, sarama.OffsetNewest)
-		if err != nil {
-			self.logger.Println("Failed to create partition consumer:", err)
-			return
-		}
-		go func(pc sarama.PartitionConsumer) {
-			defer wg.Done()
-			<-closing
-			pc.AsyncClose()
-		}(pc)
-		wg.Add(1)
-		go func(pc sarama.PartitionConsumer) {
-			for message := range pc.Messages() {
-				messages <- message.Value
-			}
-		}(pc)
-	}
-	wg.Wait()
+	return
 }
