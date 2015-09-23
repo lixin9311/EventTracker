@@ -41,7 +41,7 @@ var (
 func readKafka() {
 	consumer, err := kafka.NewConsumer(conf.Extension.Anwo.Kafka_consumer_group, strings.Split(conf.Extension.Anwo.Kafka_clk_topic, ","), conf.Extension.Anwo.Zookeeper)
 	if err != nil {
-		log.Fatalln("Failed to create kafka consumer.")
+		logger.Fatalln("Failed to create kafka consumer.")
 	}
 	defer consumer.Close()
 	go func() {
