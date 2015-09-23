@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"net/rpc"
+	"net/url"
 	"os"
 	"os/signal"
 	"strconv"
@@ -129,7 +130,10 @@ func readKafka() {
 		pid := conf.Extension.Anwo.Pid
 		base := conf.Extension.Anwo.Api_url
 		mac := "AABBCCDDEEFF"
-		url := fmt.Sprintf("%s?pid=%s&advid=%s&ip=%s&cts=%s&osv=%s&mobile=%s&idfa=%s&mac=%s&keywords=%s", base, pid, ext_map["adv_id"].(string), ip.(string), cts.(string), ext_map["os_version"].(string), ext_map["device_model"].(string), idfa.(string), mac, keywords)
+		if *verbose {
+			logger.Println(record)
+		}
+		url := fmt.Sprintf("%s?pid=%s&advid=%s&ip=%s&cts=%s&osv=%s&mobile=%s&idfa=%s&mac=%s&keywords=%s", base, pid, ext_map["adv_id"].(string), ip.(string), cts.(string), ext_map["os_version"].(string), url.QueryEscape(ext_map["device_model"].(string)), idfa.(string), mac, keywords)
 		logger.Println(url)
 		go func(url string) {
 			request, err := http.NewRequest("GET", url, nil)
@@ -142,6 +146,9 @@ func readKafka() {
 			if err != nil {
 				logger.Println("Failed to send clk to remote server:", err)
 				return
+			}
+			if resp.StatusCode != 200 {
+				logger.Println("Err when send clk:", resp.Status)
 			}
 			io.Copy(ioutil.Discard, resp.Body)
 			resp.Body.Close()
