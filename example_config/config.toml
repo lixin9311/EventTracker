@@ -2,6 +2,8 @@
 # 最前方的反向代理，接受http请求，然后转发到已经注册的后端服务
 http_listen_addr = "0.0.0.0:8082"
 log_file = "tracker.log"
+log_file_formatter = "text" # 可用参数为 "text", "json"
+log_level = "debug" # 可用参数为 "debug", "info", "warn", "fatal", "panic"
 backup_file = "backup.log"
 
 [kafka]

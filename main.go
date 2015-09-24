@@ -30,18 +30,47 @@ func init() {
 	conf = et.ParseConfig(*configFile)
 	// Init log system
 	log.Formatter = new(logrus.TextFormatter)
-	log.Level = logrus.DebugLevel
 	// Init log to file
-	formatter := new(logrus.TextFormatter) // default
-	formatter.ForceUnColored = true
-	log.Hooks.Add(lfshook.NewHook(lfshook.PathMap{
-		logrus.InfoLevel:  conf.Main.Log_file,
-		logrus.ErrorLevel: conf.Main.Log_file,
-		logrus.DebugLevel: conf.Main.Log_file,
-		logrus.PanicLevel: conf.Main.Log_file,
-		logrus.FatalLevel: conf.Main.Log_file,
-		logrus.WarnLevel:  conf.Main.Log_file,
-	}, new(logrus.JSONFormatter)))
+	switch conf.Main.Log_file_formatter {
+	case "json":
+		log.Hooks.Add(lfshook.NewHook(lfshook.PathMap{
+			logrus.InfoLevel:  conf.Main.Log_file,
+			logrus.ErrorLevel: conf.Main.Log_file,
+			logrus.DebugLevel: conf.Main.Log_file,
+			logrus.PanicLevel: conf.Main.Log_file,
+			logrus.FatalLevel: conf.Main.Log_file,
+			logrus.WarnLevel:  conf.Main.Log_file,
+		}, new(logrus.JSONFormatter)))
+	case "text":
+		formatter := new(logrus.TextFormatter) // default
+		formatter.ForceUnColored = true
+		log.Hooks.Add(lfshook.NewHook(lfshook.PathMap{
+			logrus.InfoLevel:  conf.Main.Log_file,
+			logrus.ErrorLevel: conf.Main.Log_file,
+			logrus.DebugLevel: conf.Main.Log_file,
+			logrus.PanicLevel: conf.Main.Log_file,
+			logrus.FatalLevel: conf.Main.Log_file,
+			logrus.WarnLevel:  conf.Main.Log_file,
+		}, formatter))
+	default:
+		log.Fatalln("Unrecognized log file formatter:", conf.Main.Log_file_formatter)
+	}
+	switch conf.Main.Log_level {
+	case "debug":
+		log.Level = logrus.DebugLevel
+	case "info":
+		log.Level = logrus.InfoLevel
+	case "warn":
+		log.Level = logrus.WarnLevel
+	case "error":
+		log.Level = logrus.ErrorLevel
+	case "fatal":
+		log.Level = logrus.FatalLevel
+	case "panic":
+		log.Level = logrus.PanicLevel
+	default:
+		log.Fatalln("Unrecognized log level:", conf.Main.Log_level)
+	}
 	// setup backup fi.e
 	safe_file, err := os.OpenFile(conf.Main.Backup_file, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {

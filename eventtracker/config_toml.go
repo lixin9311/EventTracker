@@ -7,9 +7,11 @@ import (
 )
 
 type main_config struct {
-	Http_listen_addr string
-	Log_file         string
-	Backup_file      string
+	Http_listen_addr   string
+	Log_file           string
+	Log_file_formatter string
+	Log_level          string
+	Backup_file        string
 }
 
 type kafka_config struct {

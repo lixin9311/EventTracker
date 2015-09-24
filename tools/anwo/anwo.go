@@ -24,16 +24,12 @@ import (
 )
 
 var (
-	configFile   = flag.String("c", "config.json", "config file.")
-	verbose      = flag.Bool("v", false, "Verbose")
-	sign_check   = flag.Bool("f", false, "Force pass sign check.")
-	lsadvertiser = flag.Bool("ls", false, "list advertisers.")
-	log          *logrus.Logger
-	conf         *et.Config
-	messages     = make(chan []byte, 128)
-	closing      = make(chan struct{})
-	transport    = http.Transport{MaxIdleConnsPerHost: 200}
-	client       = &http.Client{Transport: &transport}
+	configFile = flag.String("c", "config.json", "config file.")
+	sign_check = flag.Bool("f", false, "Force pass sign check.")
+	log        *logrus.Logger
+	conf       *et.Config
+	transport  = http.Transport{MaxIdleConnsPerHost: 200}
+	client     = &http.Client{Transport: &transport}
 	// Fail safe buffer file
 	fail_safe *golog.Logger
 	address   []string
@@ -224,11 +220,9 @@ func EventHandler(w http.ResponseWriter, r *http.Request) {
 	log.WithFields(logrus.Fields{
 		"module": "adwo",
 	}).Debugln("Incomming event from:", remote, "With Header:", r.Header)
-	if *verbose {
-		log.WithFields(logrus.Fields{
-			"module": "adwo",
-		}).Debugln("Request params:", r.Form)
-	}
+	log.WithFields(logrus.Fields{
+		"module": "adwo",
+	}).Debugln("Request params:", r.Form)
 	// required fields
 	if len(r.Form["appid"]) < 1 {
 		ErrorAndReturnCode(w, "Missing Required field: No appid", 400)
@@ -492,18 +486,47 @@ func init() {
 	conf = et.ParseConfig(*configFile)
 	// Init log system
 	log.Formatter = new(logrus.TextFormatter)
-	log.Level = logrus.DebugLevel
 	// Init log to file
-	formatter := new(logrus.TextFormatter) // default
-	formatter.ForceUnColored = true
-	log.Hooks.Add(lfshook.NewHook(lfshook.PathMap{
-		logrus.InfoLevel:  conf.Main.Log_file,
-		logrus.ErrorLevel: conf.Main.Log_file,
-		logrus.DebugLevel: conf.Main.Log_file,
-		logrus.PanicLevel: conf.Main.Log_file,
-		logrus.FatalLevel: conf.Main.Log_file,
-		logrus.WarnLevel:  conf.Main.Log_file,
-	}, new(logrus.JSONFormatter)))
+	switch conf.Main.Log_file_formatter {
+	case "json":
+		log.Hooks.Add(lfshook.NewHook(lfshook.PathMap{
+			logrus.InfoLevel:  conf.Main.Log_file,
+			logrus.ErrorLevel: conf.Main.Log_file,
+			logrus.DebugLevel: conf.Main.Log_file,
+			logrus.PanicLevel: conf.Main.Log_file,
+			logrus.FatalLevel: conf.Main.Log_file,
+			logrus.WarnLevel:  conf.Main.Log_file,
+		}, new(logrus.JSONFormatter)))
+	case "text":
+		formatter := new(logrus.TextFormatter) // default
+		formatter.ForceUnColored = true
+		log.Hooks.Add(lfshook.NewHook(lfshook.PathMap{
+			logrus.InfoLevel:  conf.Main.Log_file,
+			logrus.ErrorLevel: conf.Main.Log_file,
+			logrus.DebugLevel: conf.Main.Log_file,
+			logrus.PanicLevel: conf.Main.Log_file,
+			logrus.FatalLevel: conf.Main.Log_file,
+			logrus.WarnLevel:  conf.Main.Log_file,
+		}, formatter))
+	default:
+		log.Fatalln("Unrecognized log file formatter:", conf.Main.Log_file_formatter)
+	}
+	switch conf.Main.Log_level {
+	case "debug":
+		log.Level = logrus.DebugLevel
+	case "info":
+		log.Level = logrus.InfoLevel
+	case "warn":
+		log.Level = logrus.WarnLevel
+	case "error":
+		log.Level = logrus.ErrorLevel
+	case "fatal":
+		log.Level = logrus.FatalLevel
+	case "panic":
+		log.Level = logrus.PanicLevel
+	default:
+		log.Fatalln("Unrecognized log level:", conf.Main.Log_level)
+	}
 	// setup backup fi.e
 	safe_file, err := os.OpenFile(conf.Main.Backup_file, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
@@ -529,7 +552,6 @@ func main() {
 		log.WithFields(logrus.Fields{
 			"module": "adwo",
 		}).Infoln("Instance shutting down.")
-		close(closing)
 		time.Sleep(time.Second)
 		os.Exit(0)
 	}()
