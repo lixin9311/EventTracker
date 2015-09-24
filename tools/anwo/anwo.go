@@ -24,7 +24,7 @@ import (
 )
 
 var (
-	configFile = flag.String("c", "config.json", "config file.")
+	configFile = flag.String("c", "config.toml", "config file.")
 	sign_check = flag.Bool("f", false, "Force pass sign check.")
 	log        *logrus.Logger
 	conf       *et.Config
@@ -485,6 +485,7 @@ func init() {
 	// open config
 	conf = et.ParseConfig(*configFile)
 	// Init log system
+	log = logrus.New()
 	log.Formatter = new(logrus.TextFormatter)
 	// Init log to file
 	switch conf.Main.Log_file_formatter {

@@ -15,12 +15,12 @@ import (
 
 var (
 	conf       *et.Config
-	configFile = flag.String("c", "config.json", "Config file in json.")
+	configFile = flag.String("c", "config.toml", "Config file in json.")
 	// Fail safe buffer file
 	address        []string
 	defaultHandler *et.DefaultHandler
 	kafka          *et.Kafka
-	log            = logrus.New()
+	log            *logrus.Logger
 )
 
 func init() {
@@ -29,6 +29,7 @@ func init() {
 	// open config
 	conf = et.ParseConfig(*configFile)
 	// Init log system
+	log = logrus.New()
 	log.Formatter = new(logrus.TextFormatter)
 	// Init log to file
 	switch conf.Main.Log_file_formatter {
