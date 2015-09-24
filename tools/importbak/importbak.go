@@ -7,8 +7,8 @@ import (
 	"flag"
 	"fmt"
 	et "github.com/lixin9311/EventTracker/eventtracker"
+	"github.com/lixin9311/logrus"
 	"io/ioutil"
-	"log"
 	"os"
 	"strings"
 )
@@ -20,6 +20,7 @@ var (
 	success    = 0
 	kafka      *et.Kafka
 	avro       *et.Avro
+	log        = logrus.New()
 )
 
 func readFromBackup() {
@@ -92,8 +93,8 @@ func readFromBackup() {
 func init() {
 	flag.Parse()
 	conf := et.ParseConfig(*configFile)
-	kafka = et.NewKafkaInst(os.Stderr, conf.Kafka)
-	avro = et.NewAvroInst(os.Stderr, conf.Avro)
+	kafka = et.NewKafkaInst(log, conf.Kafka)
+	avro = et.NewAvroInst(log, conf.Avro)
 }
 
 func main() {
