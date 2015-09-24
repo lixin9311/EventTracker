@@ -15,10 +15,11 @@ type main_config struct {
 }
 
 type kafka_config struct {
-	Brokers     []string
-	Partitioner string
-	Partition   int
-	Topics      map[string]string
+	Brokers          []string
+	Partitioner      string
+	Partition        int
+	Topics           map[string]string
+	Read_from_oldest bool
 }
 
 type avro_config struct {

@@ -9,6 +9,7 @@ backup_file = "backup.log"
 [kafka]
 brokers = ["big00:9092", "bid00:9092", "bid01:9092"]
 partitioner = "hash"
+read_from_oldest = false # 是不是要从最早的消息开始消费？
 partition = -1
 
 [kafka.topics]

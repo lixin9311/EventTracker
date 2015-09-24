@@ -17,11 +17,13 @@ type Kafka struct {
 	topic      map[string]string
 	partition  int32
 	brokerlist []string
+	offset     int64
 	logger     *logrus.Logger
 }
 
 func NewKafkaInst(w *logrus.Logger, conf kafka_config) *Kafka {
 	var err error
+	var offset int64
 	config := sarama.NewConfig()
 	// init partitioner
 	switch conf.Partitioner {
@@ -41,6 +43,11 @@ func NewKafkaInst(w *logrus.Logger, conf kafka_config) *Kafka {
 			"module": "kafka",
 		}).Fatalf("Partitioner %s not supported.\n", conf.Partitioner)
 	}
+	if conf.Read_from_oldest {
+		offset = sarama.OffsetOldest
+	} else {
+		offset = sarama.OffsetNewest
+	}
 	partition := int32(conf.Partition)
 	// init topic
 	topic := conf.Topics
@@ -56,7 +63,7 @@ func NewKafkaInst(w *logrus.Logger, conf kafka_config) *Kafka {
 	w.WithFields(logrus.Fields{
 		"module": "kafka",
 	}).Infoln("Init completed")
-	return &Kafka{producer: producer, topic: topic, partition: partition, brokerlist: brokerlist, logger: w}
+	return &Kafka{producer: producer, topic: topic, partition: partition, brokerlist: brokerlist, logger: w, offset: offset}
 }
 
 // SendByteMessage sends a byte slice message to kafka
@@ -92,7 +99,7 @@ func (self *Kafka) Destroy() {
 func (self *Kafka) NewConsumer(consumerGroup string, topics []string, zoo string) (consumer *consumergroup.ConsumerGroup, err error) {
 	var zoos []string
 	config := consumergroup.NewConfig()
-	config.Offsets.Initial = sarama.OffsetOldest
+	config.Offsets.Initial = self.offset
 	config.Offsets.ProcessingTimeout = 10 * time.Second
 	zoos, config.Zookeeper.Chroot = kazoo.ParseConnectionString(zoo)
 	consumer, err = consumergroup.JoinConsumerGroup(consumerGroup, topics, zoos, config)
