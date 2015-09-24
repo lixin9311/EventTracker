@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/csv"
 	"fmt"
+	"github.com/lixin9311/logrus"
 	"html/template"
 	"io"
 	"log"
@@ -12,7 +13,7 @@ import (
 )
 
 type DefaultHandler struct {
-	logger *log.Logger
+	logger *logrus.Logger
 	// MaxFileSize is the maximum size of upload file
 	MaxFileSize int64
 	// MaxMemorySize is the maximum memory size to handle the upload file
@@ -22,9 +23,8 @@ type DefaultHandler struct {
 	avro          *Avro
 }
 
-func NewDefaultHandler(w io.Writer, fail_safe *log.Logger, kafka *Kafka, avro *Avro) *DefaultHandler {
-	logger := log.New(w, "[http]", log.LstdFlags|log.Lshortfile)
-	return &DefaultHandler{logger: logger, MaxFileSize: int64(10 * 1024 * 1024), MaxMemorySize: int64(10 * 1024 * 1024), fail_safe: fail_safe, kafka: kafka, avro: avro}
+func NewDefaultHandler(w *logrus.Logger, fail_safe *log.Logger, kafka *Kafka, avro *Avro) *DefaultHandler {
+	return &DefaultHandler{logger: w, MaxFileSize: int64(10 * 1024 * 1024), MaxMemorySize: int64(10 * 1024 * 1024), fail_safe: fail_safe, kafka: kafka, avro: avro}
 }
 
 func (self *DefaultHandler) PingHandler(w http.ResponseWriter, r *http.Request) {
@@ -39,14 +39,18 @@ func PingHandler(w http.ResponseWriter, r *http.Request) {
 func (self *DefaultHandler) HomeHandler(w http.ResponseWriter, r *http.Request) {
 	t, err := template.ParseFiles("index.html")
 	if err != nil {
-		self.logger.Fatalln("Parse index template failed:", err)
+		self.logger.WithFields(logrus.Fields{
+			"module": "Handler",
+		}).Fatalln("Parse index template failed:", err)
 	}
 	t.Execute(w, nil)
 }
 
 // ErrorAndReturnCode prints an error and reponse to http client
 func (self *DefaultHandler) ErrorAndReturnCode(w http.ResponseWriter, errstr string, code int) {
-	self.logger.Println(errstr)
+	self.logger.WithFields(logrus.Fields{
+		"module": "Handler",
+	}).Errorln(errstr)
 	http.Error(w, errstr, code)
 }
 
@@ -58,7 +62,9 @@ func (self *DefaultHandler) UploadHandler(w http.ResponseWriter, r *http.Request
 	} else {
 		remote = r.RemoteAddr
 	}
-	self.logger.Println("Incomming upload file from:", remote)
+	self.logger.WithFields(logrus.Fields{
+		"module": "Handler",
+	}).Debugln("Incomming upload file from:", remote, "With Header:", r.Header)
 	// limit the file size
 	if r.ContentLength > self.MaxFileSize {
 		self.ErrorAndReturnCode(w, "The file is too large:"+strconv.FormatInt(r.ContentLength, 10)+"bytes", 400)
@@ -157,7 +163,9 @@ func (self *DefaultHandler) UploadHandler(w http.ResponseWriter, r *http.Request
 		counter++
 	}
 	// done
-	self.logger.Printf("%d messages have been writen.", counter)
+	self.logger.WithFields(logrus.Fields{
+		"module": "Handler",
+	}).Debugln("%d messages have been writen.", counter)
 	w.WriteHeader(200)
 	fmt.Fprintf(w, "%d messages have been writen.", counter)
 }
@@ -171,7 +179,9 @@ func (self *DefaultHandler) EventHandler(w http.ResponseWriter, r *http.Request)
 	} else {
 		remote = r.RemoteAddr
 	}
-	self.logger.Println("Incomming event from:", remote)
+	self.logger.WithFields(logrus.Fields{
+		"module": "Handler",
+	}).Debugln("Incomming event from:", remote, "With Header:", r.Header)
 	// required fields
 	if len(r.Form["did"]) < 1 {
 		self.ErrorAndReturnCode(w, "Missing Required field: No did", 400)
@@ -213,10 +223,12 @@ func (self *DefaultHandler) EventHandler(w http.ResponseWriter, r *http.Request)
 	if len(extension) != 0 {
 		record.Set("extension", extension)
 	}
+	self.logger.WithFields(logrus.Fields{
+		"module": "Handler",
+	}).Debugln("Generated AVRO record:", record)
 	// encode avro
 	buf := new(bytes.Buffer)
 	if err = self.avro.Encode(buf, record); err != nil {
-		self.logger.Println("AVRO record:", record)
 		self.ErrorAndReturnCode(w, "Failed to encode avro record:"+err.Error(), 500)
 		return
 	}
@@ -230,7 +242,9 @@ func (self *DefaultHandler) EventHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	// done
-	self.logger.Printf("New record partition=%d\toffset=%d\n", part, offset)
+	self.logger.WithFields(logrus.Fields{
+		"module": "Handler",
+	}).Debugf("New record partition=%d\toffset=%d\n", part, offset)
 	w.WriteHeader(200)
 	fmt.Fprintf(w, "1 messages have been writen.")
 }

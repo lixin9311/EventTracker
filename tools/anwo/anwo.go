@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"github.com/gorilla/mux"
 	et "github.com/lixin9311/EventTracker/eventtracker"
+	"github.com/lixin9311/lfshook"
+	"github.com/lixin9311/logrus"
 	"io"
 	"io/ioutil"
-	"log"
+	golog "log"
 	"net"
 	"net/http"
 	"net/rpc"
@@ -26,28 +28,35 @@ var (
 	verbose      = flag.Bool("v", false, "Verbose")
 	sign_check   = flag.Bool("f", false, "Force pass sign check.")
 	lsadvertiser = flag.Bool("ls", false, "list advertisers.")
+	log          *logrus.Logger
 	conf         *et.Config
-	logger       *log.Logger
 	messages     = make(chan []byte, 128)
 	closing      = make(chan struct{})
 	transport    = http.Transport{MaxIdleConnsPerHost: 200}
 	client       = &http.Client{Transport: &transport}
 	// Fail safe buffer file
-	fail_safe *log.Logger
+	fail_safe *golog.Logger
 	address   []string
 	kafka     *et.Kafka
 	avro      *et.Avro
 )
 
 func readKafka() {
+	log.WithFields(logrus.Fields{
+		"module": "adwo",
+	}).Debugln("Create consumer with consumer_group:%s, topics:%s, zookeepers:%s.", conf.Extension.Anwo.Kafka_consumer_group, conf.Extension.Anwo.Kafka_clk_topic, conf.Extension.Anwo.Zookeeper)
 	consumer, err := kafka.NewConsumer(conf.Extension.Anwo.Kafka_consumer_group, strings.Split(conf.Extension.Anwo.Kafka_clk_topic, ","), conf.Extension.Anwo.Zookeeper)
 	if err != nil {
-		logger.Fatalln("Failed to create kafka consumer.")
+		log.WithFields(logrus.Fields{
+			"module": "adwo",
+		}).Fatalln("Failed to create kafka consumer.")
 	}
 	defer consumer.Close()
 	go func() {
 		for err := range consumer.Errors() {
-			logger.Println("Error occured when consume kafka:", err)
+			log.WithFields(logrus.Fields{
+				"module": "adwo",
+			}).Errorln("Error occured when consume kafka:", err)
 		}
 	}()
 	for message := range consumer.Messages() {
@@ -56,73 +65,103 @@ func readKafka() {
 		record, err := avro.Decode(buffer)
 		event, err := record.Get("event")
 		if err != nil {
-			logger.Println("Failed to get event:", err)
+			log.WithFields(logrus.Fields{
+				"module": "adwo",
+			}).Errorln("Failed to get event:", err)
+			continue
 		}
 		if event.(string) != "click" {
 			continue
 		}
 		ext, err := record.Get("extension")
 		if err != nil {
-			logger.Println("Failed to get extension:", err)
+			log.WithFields(logrus.Fields{
+				"module": "adwo",
+			}).Errorln("Failed to get extension:", err)
 			continue
 		}
 		ext_map, ok := ext.(map[string]interface{})
 		if !ok {
-			logger.Println("Failed convert extesion to map.")
+			log.WithFields(logrus.Fields{
+				"module": "adwo",
+			}).Errorln("Failed convert extesion to map.")
 			continue
 		}
 		if adv_id, ok := ext_map["adv_id"]; !ok {
-			logger.Println("Not found adv_id in ext_map. Maybe not an adwo ad.")
+			//log.WithFields(logrus.Fields{
+			//	"module": "adwo",
+			//}).Debugln("Not found adv_id in ext_map. Maybe not an adwo ad.")
 			continue
 		} else if adv_id == nil || adv_id.(string) == "" {
-			if *verbose {
-				logger.Println("It should not happen.")
-				logger.Println(record)
-			}
-			logger.Println("adv_id not valid, maybe not an adwo ad.")
+			log.WithFields(logrus.Fields{
+				"module": "adwo",
+			}).Debugln("It should not happen.")
+			log.WithFields(logrus.Fields{
+				"module": "adwo",
+			}).Debugln("The buggy record:", record)
+			log.WithFields(logrus.Fields{
+				"module": "adwo",
+			}).Errorln("adv_id not valid, maybe not an adwo ad.")
 			continue
 		}
 		id, err := record.Get("id")
 		if err != nil {
-			logger.Println("Failed to get auction_id:", err)
+			log.WithFields(logrus.Fields{
+				"module": "adwo",
+			}).Errorln("Failed to get auction_id:", err)
 			continue
 		}
 		idfa, err := record.Get("did")
 		if err != nil {
-			logger.Println("Failed to get idfa:", err)
+			log.WithFields(logrus.Fields{
+				"module": "adwo",
+			}).Errorln("Failed to get idfa:", err)
 			continue
 		}
 		ip, err := record.Get("ip")
 		if err != nil {
-			logger.Println("Failed to get ip:", err)
+			log.WithFields(logrus.Fields{
+				"module": "adwo",
+			}).Errorln("Failed to get ip:", err)
 			continue
 		}
-
 		cts, err := record.Get("timestamp")
 		if err != nil {
-			logger.Println("Failed to get timestamp:", err)
+			log.WithFields(logrus.Fields{
+				"module": "adwo",
+			}).Errorln("Failed to get timestamp:", err)
 			continue
 		}
 		t, err := time.Parse(time.RFC3339, cts.(string))
 		if err != nil {
-			logger.Println("Failed to parse time from kafka:", err)
+			log.WithFields(logrus.Fields{
+				"module": "adwo",
+			}).Errorln("Failed to convert time:", err)
 			continue
 		}
 		cts = fmt.Sprintf("%d", t.UTC().UnixNano()/1000000)
 		if _, ok := ext_map["os_version"]; !ok {
-			logger.Println("Not found os_version in ext_map.")
-			continue
+			log.WithFields(logrus.Fields{
+				"module": "adwo",
+			}).Warnln("Not found os_version in ext_map.")
 		}
 		if _, ok := ext_map["device_model"]; !ok {
-			logger.Println("Not found device_model in ext_map.")
+			log.WithFields(logrus.Fields{
+				"module": "adwo",
+			}).Warnln("Not found device_model in ext_map.")
 			continue
 		}
 		for k, v := range ext_map {
 			if _, ok := v.(string); !ok {
-				logger.Printf("%s unkown\n", k)
+				log.WithFields(logrus.Fields{
+					"module": "adwo",
+				}).Warnf("%s unkown\n", k)
 				ext_map[k] = "unknown"
 			}
 			if v.(string) == "" {
+				log.WithFields(logrus.Fields{
+					"module": "adwo",
+				}).Warnf("%s unkown\n", k)
 				ext_map[k] = "unknown"
 			}
 		}
@@ -130,25 +169,33 @@ func readKafka() {
 		pid := conf.Extension.Anwo.Pid
 		base := conf.Extension.Anwo.Api_url
 		mac := "AABBCCDDEEFF"
-		if *verbose {
-			logger.Println(record)
-		}
+		log.WithFields(logrus.Fields{
+			"module": "adwo",
+		}).Debugln("Read AVRO record:", record)
 		url := fmt.Sprintf("%s?pid=%s&advid=%s&ip=%s&cts=%s&osv=%s&mobile=%s&idfa=%s&mac=%s&keywords=%s", base, pid, ext_map["adv_id"].(string), ip.(string), cts.(string), ext_map["os_version"].(string), url.QueryEscape(ext_map["device_model"].(string)), idfa.(string), mac, keywords)
-		logger.Println(url)
+		log.WithFields(logrus.Fields{
+			"module": "adwo",
+		}).Debugln("Generated request url:", url)
 		go func(url string) {
 			request, err := http.NewRequest("GET", url, nil)
 			if err != nil {
-				logger.Println("Failed to create request:", err)
+				log.WithFields(logrus.Fields{
+					"module": "adwo",
+				}).Errorln("Failed to create request:", err)
 				return
 			}
 			request.Header.Add("Connection", "keep-alive")
 			resp, err := client.Do(request)
 			if err != nil {
-				logger.Println("Failed to send clk to remote server:", err)
+				log.WithFields(logrus.Fields{
+					"module": "adwo",
+				}).Errorln("Failed to send clk to remote server:", err)
 				return
 			}
 			if resp.StatusCode != 200 {
-				logger.Println("Err when send clk:", resp.Status)
+				log.WithFields(logrus.Fields{
+					"module": "adwo",
+				}).Errorln("Err when send clk:", resp.Status)
 			}
 			io.Copy(ioutil.Discard, resp.Body)
 			resp.Body.Close()
@@ -159,7 +206,9 @@ func readKafka() {
 }
 
 func ErrorAndReturnCode(w http.ResponseWriter, errstr string, code int) {
-	logger.Println(errstr)
+	log.WithFields(logrus.Fields{
+		"module": "adwo",
+	}).Errorln(errstr)
 	http.Error(w, errstr, code)
 }
 
@@ -172,10 +221,13 @@ func EventHandler(w http.ResponseWriter, r *http.Request) {
 	} else {
 		remote = r.RemoteAddr
 	}
-	logger.Println("Incomming event from:", remote)
+	log.WithFields(logrus.Fields{
+		"module": "adwo",
+	}).Debugln("Incomming event from:", remote, "With Header:", r.Header)
 	if *verbose {
-		logger.Println("Request params:")
-		logger.Println(r.Form)
+		log.WithFields(logrus.Fields{
+			"module": "adwo",
+		}).Debugln("Request params:", r.Form)
 	}
 	// required fields
 	if len(r.Form["appid"]) < 1 {
@@ -218,7 +270,9 @@ func EventHandler(w http.ResponseWriter, r *http.Request) {
 	str := fmt.Sprintf("adid=%sadname=%sappid=%sdevice=%sidfa=%spoint=%sts=%skey=%s", r.Form["adid"][0], r.Form["adname"][0], r.Form["appid"][0], r.Form["device"][0], r.Form["idfa"][0], r.Form["point"][0], r.Form["ts"][0], conf.Extension.Anwo.Key)
 	crypted := md5.Sum([]byte(str))
 	if fmt.Sprintf("%x", crypted) != strings.Split(r.Form["sign"][0], ",")[0] {
-		logger.Printf("Sign not matched!: %x :%s\n", crypted, r.Form["sign"][0])
+		log.WithFields(logrus.Fields{
+			"module": "adwo",
+		}).Warnf("Sign not matched!: %x :%s\n, bypass sign check? %s", crypted, r.Form["sign"][0], *sign_check)
 		if !*sign_check {
 			ErrorAndReturnCode(w, "Sign mismatched!", 400)
 			return
@@ -233,12 +287,13 @@ func EventHandler(w http.ResponseWriter, r *http.Request) {
 	if len(r.Form["ip"]) > 0 {
 		record.Set("ip", r.Form["ip"][0])
 	}
-
 	// set required fields
 	record.Set("did", r.Form["idfa"][0])
 	nsec, err := strconv.ParseInt(r.Form["ts"][0], 10, 64)
 	if err != nil {
-		logger.Println("Failed to parse ts to int:", err)
+		log.WithFields(logrus.Fields{
+			"module": "adwo",
+		}).Errorln("Failed to parse ts to int:", err)
 		ErrorAndReturnCode(w, "Failed to parse ts:"+err.Error(), 500)
 		return
 	}
@@ -257,37 +312,47 @@ func EventHandler(w http.ResponseWriter, r *http.Request) {
 	if len(extension) != 0 {
 		record.Set("extension", extension)
 	}
-	if *verbose {
-		logger.Println("Record to write:")
-		logger.Println(record)
-	}
+	log.WithFields(logrus.Fields{
+		"module": "adwo",
+	}).Debugln("Generated AVRO record:", record)
 	// encode avro
 	buf := new(bytes.Buffer)
 	if err = avro.Encode(buf, record); err != nil {
-		logger.Println("AVRO record:", record)
 		ErrorAndReturnCode(w, "Failed to encode avro record:"+err.Error(), 500)
 		return
 	}
 	url := fmt.Sprintf("%s?params=%s", conf.Extension.Anwo.Td_postback_url, r.Form["keyword"][0])
 	go func(url string) {
+		log.WithFields(logrus.Fields{
+			"module": "adwo",
+		}).Debugln("Send postback to adserver with request url:", url)
+
 		request, err := http.NewRequest("GET", url, nil)
 		if err != nil {
-			logger.Println("Failed to create request:", err)
+			log.WithFields(logrus.Fields{
+				"module": "adwo",
+			}).Errorln("Failed to create request:", err)
 			return
 		}
 		request.Header.Add("Connection", "keep-alive")
 		resp, err := client.Do(request)
 		if err != nil {
-			logger.Println("Failed to send clk to remote server:", err)
+			log.WithFields(logrus.Fields{
+				"module": "adwo",
+			}).Errorln("Failed to send clk to remote server:", err)
 			return
 		}
 		if resp.StatusCode != 200 {
-			logger.Println("Error when send td_postback:", resp.Status)
+			log.WithFields(logrus.Fields{
+				"module": "adwo",
+			}).Errorln("Error when send td_postback:", resp.Status)
 			str, err := ioutil.ReadAll(resp.Body)
 			if err != nil {
 				return
 			}
-			logger.Println("Resp body:", string(str))
+			log.WithFields(logrus.Fields{
+				"module": "adwo",
+			}).Debugln("Resp body:", string(str))
 			resp.Body.Close()
 			return
 		}
@@ -305,7 +370,9 @@ func EventHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// done
-	logger.Printf("New record partition=%d\toffset=%d\n", part, offset)
+	log.WithFields(logrus.Fields{
+		"module": "adwo",
+	}).Debugf("New record partition=%d\toffset=%d\n", part, offset)
 	w.WriteHeader(200)
 	fmt.Fprintf(w, "1 messages have been writen.")
 }
@@ -314,7 +381,9 @@ func serve_http() {
 	var err error
 	// ~kafka
 	defer kafka.Destroy()
-	defer logger.Println("Instance down.")
+	defer log.WithFields(logrus.Fields{
+		"module": "adwo",
+	}).Infoln("Instance down.")
 	// REST route
 	r := mux.NewRouter()
 	r.HandleFunc("/anwo", EventHandler)
@@ -322,83 +391,134 @@ func serve_http() {
 	// bring up the service
 	var ln net.Listener
 	if conf.Front.Enabled == true {
-		logger.Println("Using a Front server.")
+		log.WithFields(logrus.Fields{
+			"module": "adwo",
+		}).Infoln("Front server Enabled.")
 		ln, err = net.Listen("tcp", conf.Front.Backend_http_listen_addr)
 		if err != nil {
-			logger.Fatalln("Failed to listen:", err)
+			log.WithFields(logrus.Fields{
+				"module": "adwo",
+			}).Fatalln("Backend service failed to listen address[", conf.Front.Backend_http_listen_addr, "]:", err)
 		}
-		logger.Println("Http server listening a random local port at:", ln.Addr())
+		log.WithFields(logrus.Fields{
+			"module": "adwo",
+		}).Infoln("Http server is listening at:", ln.Addr())
 		go func() {
 			// reg service to front
-			logger.Println("Registering service to front server:", conf.Front.Service_reg_addr)
+			log.WithFields(logrus.Fields{
+				"module": "adwo",
+			}).Infoln("Registering service to front server:", conf.Front.Service_reg_addr)
 			conn, err := net.Dial("tcp", conf.Front.Service_reg_addr)
 			if err != nil {
-				logger.Fatalln("Failed to connect to the front service:", err)
+				log.WithFields(logrus.Fields{
+					"module": "adwo",
+				}).Fatalln("Failed to connect to the front service:", err)
 			}
 			rpcClient := rpc.NewClient(conn)
 			address = []string{"/anwo", "http://" + ln.Addr().String()}
 			var response error
 			err = rpcClient.Call("Handle.Update", &address, &response)
 			if err != nil {
-				logger.Fatalln("Failed to register service:", err)
+				log.WithFields(logrus.Fields{
+					"module": "adwo",
+				}).Fatalln("Failed to register service:", err)
 			}
 			if response != nil {
-				log.Fatalln("Failed to register service:", response)
+				log.WithFields(logrus.Fields{
+					"module": "adwo",
+				}).Fatalln("Failed to register service:", response)
 			}
 			rpcClient.Close()
-			logger.Println("Registered to the front service.")
+			log.WithFields(logrus.Fields{
+				"module": "adwo",
+			}).Infoln("Registered to the front service.")
 		}()
 		defer func() {
 			// reg service to front
-			logger.Println("Unsigning service to front server:", conf.Front.Service_reg_addr)
+			log.WithFields(logrus.Fields{
+				"module": "adwo",
+			}).Infoln("Unsigning service from front server:", conf.Front.Service_reg_addr)
 			conn, err := net.Dial("tcp", conf.Front.Service_reg_addr)
 			if err != nil {
-				logger.Fatalln("Failed to connect to the front service:", err)
+				log.WithFields(logrus.Fields{
+					"module": "adwo",
+				}).Fatalln("Failed to connect to the front service:", err)
 			}
 			rpcClient := rpc.NewClient(conn)
 			var response error
 			err = rpcClient.Call("Handle.Delete", &address, &response)
 			if err != nil {
-				logger.Println("Failed to unsign:", err)
+				log.WithFields(logrus.Fields{
+					"module": "adwo",
+				}).Infoln("Failed to unsign:", err)
 			}
 			if response != nil {
-				log.Println("Failed to unsign:", response)
+				log.WithFields(logrus.Fields{
+					"module": "adwo",
+				}).Infoln("Failed to unsign:", response)
 			}
 			rpcClient.Close()
-			logger.Println("Gracefully unsigned from front serive.")
+			log.WithFields(logrus.Fields{
+				"module": "adwo",
+			}).Infoln("Gracefully unsigned from front serive.")
 		}()
 	} else {
+		log.WithFields(logrus.Fields{
+			"module": "adwo",
+		}).Infoln("Front service not enabled.")
 		ln, err = net.Listen("tcp", conf.Main.Http_listen_addr)
 		if err != nil {
-			logger.Fatalln("Fail to listen:", err)
+			log.WithFields(logrus.Fields{
+				"module": "adwo",
+			}).Fatalln("Fail to listen:", err)
 		}
+		log.WithFields(logrus.Fields{
+			"module": "main",
+		}).Infoln("Service listening at:", conf.Main.Http_listen_addr)
 	}
 	// err = http.ListenAndServe(":"+conf.MainSetting["port"], r)
 	err = http.Serve(ln, r)
 	if err != nil {
-		logger.Fatalln("Failed to listen http server:", err)
+		log.WithFields(logrus.Fields{
+			"module": "adwo",
+		}).Fatalln("Failed to listen http server:", err)
 	}
 }
 
 func init() {
+	// Parse flags
 	flag.Parse()
-	var err error
+	// open config
 	conf = et.ParseConfig(*configFile)
-	logger = log.New(os.Stderr, "[main]:", log.LstdFlags|log.Lshortfile)
-	file, err := os.OpenFile(conf.Main.Log_file, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
-	if err != nil {
-		logger.Fatalln("Failed to open log file:", err)
-	}
+	// Init log system
+	log.Formatter = new(logrus.TextFormatter)
+	log.Level = logrus.DebugLevel
+	// Init log to file
+	formatter := new(logrus.TextFormatter) // default
+	formatter.ForceUnColored = true
+	log.Hooks.Add(lfshook.NewHook(lfshook.PathMap{
+		logrus.InfoLevel:  conf.Main.Log_file,
+		logrus.ErrorLevel: conf.Main.Log_file,
+		logrus.DebugLevel: conf.Main.Log_file,
+		logrus.PanicLevel: conf.Main.Log_file,
+		logrus.FatalLevel: conf.Main.Log_file,
+		logrus.WarnLevel:  conf.Main.Log_file,
+	}, new(logrus.JSONFormatter)))
+	// setup backup fi.e
 	safe_file, err := os.OpenFile(conf.Main.Backup_file, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
-		logger.Fatalln("Failed to open backup file:", err)
+		log.WithFields(logrus.Fields{
+			"module": "adwo",
+		}).Fatalln("Failed to open backup file:", err)
 	}
-	fail_safe = log.New(safe_file, "", log.LstdFlags)
-	w := io.MultiWriter(file, os.Stderr)
-	logger.SetOutput(w)
-	logger.Println("======== Loading Config Complete ========")
-	avro = et.NewAvroInst(w, conf.Avro)
-	kafka = et.NewKafkaInst(w, conf.Kafka)
+	fail_safe = golog.New(safe_file, "", golog.LstdFlags)
+	// init avro
+	avro = et.NewAvroInst(log, conf.Avro)
+	// init kafka
+	kafka = et.NewKafkaInst(log, conf.Kafka)
+	log.WithFields(logrus.Fields{
+		"module": "adwo",
+	}).Infoln("Initialization done.")
 }
 
 func main() {
@@ -406,7 +526,9 @@ func main() {
 		signals := make(chan os.Signal, 1)
 		signal.Notify(signals, os.Kill, os.Interrupt)
 		<-signals
-		logger.Println("Shutting down.")
+		log.WithFields(logrus.Fields{
+			"module": "adwo",
+		}).Infoln("Instance shutting down.")
 		close(closing)
 		time.Sleep(time.Second)
 		os.Exit(0)

@@ -2,31 +2,36 @@ package eventtracker
 
 import (
 	"github.com/linkedin/goavro"
+	"github.com/lixin9311/logrus"
 	"io"
 	"io/ioutil"
-	"log"
 )
 
 type Avro struct {
 	codec            goavro.Codec
 	recordSchemaJSON string
-	logger           *log.Logger
+	logger           *logrus.Logger
 }
 
 // Init initializes a avro package
-func NewAvroInst(w io.Writer, conf avro_config) *Avro {
-	logger := log.New(w, "[avro]:", log.LstdFlags|log.Lshortfile)
+func NewAvroInst(w *logrus.Logger, conf avro_config) *Avro {
 	data, err := ioutil.ReadFile(conf.Schema)
 	if err != nil {
-		logger.Fatalln("Failed to open schema file:", err)
+		w.WithFields(logrus.Fields{
+			"module": "avro",
+		}).Fatalln("Failed to open schema file:", err)
 	}
 	recordSchemaJSON := string(data)
 	codec, err := goavro.NewCodec(recordSchemaJSON)
 	if err != nil {
-		logger.Fatalln("Failed to init codec from schema:", err)
+		w.WithFields(logrus.Fields{
+			"module": "avro",
+		}).Fatalln("Failed to init codec from schema:", err)
 	}
-	logger.Println("Init completed.")
-	return &Avro{codec: codec, recordSchemaJSON: recordSchemaJSON, logger: logger}
+	w.WithFields(logrus.Fields{
+		"module": "avro",
+	}).Println("Init completed.")
+	return &Avro{codec: codec, recordSchemaJSON: recordSchemaJSON, logger: w}
 }
 
 // NewRecord inits a new record

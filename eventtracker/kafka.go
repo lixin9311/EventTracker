@@ -2,10 +2,9 @@ package eventtracker
 
 import (
 	"github.com/Shopify/sarama"
+	"github.com/lixin9311/logrus"
 	"github.com/wvanbergen/kafka/consumergroup"
 	"github.com/wvanbergen/kazoo-go"
-	"io"
-	"log"
 	"time"
 )
 
@@ -18,12 +17,11 @@ type Kafka struct {
 	topic      map[string]string
 	partition  int32
 	brokerlist []string
-	logger     *log.Logger
+	logger     *logrus.Logger
 }
 
-func NewKafkaInst(w io.Writer, conf kafka_config) *Kafka {
+func NewKafkaInst(w *logrus.Logger, conf kafka_config) *Kafka {
 	var err error
-	logger := log.New(w, "[kafka]:", log.LstdFlags|log.Lshortfile)
 	config := sarama.NewConfig()
 	// init partitioner
 	switch conf.Partitioner {
@@ -34,10 +32,14 @@ func NewKafkaInst(w io.Writer, conf kafka_config) *Kafka {
 	case "manual":
 		config.Producer.Partitioner = sarama.NewManualPartitioner
 		if conf.Partition == -1 {
-			logger.Fatalln("Partition is required when partitioning manually.")
+			w.WithFields(logrus.Fields{
+				"module": "kafka",
+			}).Fatalln("Partition is required when partitioning manually.")
 		}
 	default:
-		logger.Fatalf("Partitioner %s not supported.\n", conf.Partitioner)
+		w.WithFields(logrus.Fields{
+			"module": "kafka",
+		}).Fatalf("Partitioner %s not supported.\n", conf.Partitioner)
 	}
 	partition := int32(conf.Partition)
 	// init topic
@@ -47,10 +49,14 @@ func NewKafkaInst(w io.Writer, conf kafka_config) *Kafka {
 	brokerlist := conf.Brokers
 	producer, err := sarama.NewSyncProducer(brokerlist, config)
 	if err != nil {
-		logger.Fatalln("Init failed:", err)
+		w.WithFields(logrus.Fields{
+			"module": "kafka",
+		}).Fatalln("Init failed:", err)
 	}
-	logger.Println("Init completed")
-	return &Kafka{producer: producer, topic: topic, partition: partition, brokerlist: brokerlist, logger: logger}
+	w.WithFields(logrus.Fields{
+		"module": "kafka",
+	}).Infoln("Init completed")
+	return &Kafka{producer: producer, topic: topic, partition: partition, brokerlist: brokerlist, logger: w}
 }
 
 // SendByteMessage sends a byte slice message to kafka
@@ -77,7 +83,9 @@ func (self *Kafka) SendStringMessage(msg string, event_type string) (partition i
 func (self *Kafka) Destroy() {
 	err := self.producer.Close()
 	if err != nil {
-		self.logger.Println("failed to close producer gracefully:", err)
+		self.logger.WithFields(logrus.Fields{
+			"module": "kafka",
+		}).Infoln("failed to close producer gracefully:", err)
 	}
 }
 
