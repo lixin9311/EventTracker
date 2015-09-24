@@ -40,7 +40,7 @@ var (
 func readKafka() {
 	log.WithFields(logrus.Fields{
 		"module": "adwo",
-	}).Debugln("Create consumer with consumer_group:%s, topics:%s, zookeepers:%s.", conf.Extension.Anwo.Kafka_consumer_group, conf.Extension.Anwo.Kafka_clk_topic, conf.Extension.Anwo.Zookeeper)
+	}).Debugf("Create consumer with consumer_group:%s, topics:%s, zookeepers:%s.", conf.Extension.Anwo.Kafka_consumer_group, conf.Extension.Anwo.Kafka_clk_topic, conf.Extension.Anwo.Zookeeper)
 	consumer, err := kafka.NewConsumer(conf.Extension.Anwo.Kafka_consumer_group, strings.Split(conf.Extension.Anwo.Kafka_clk_topic, ","), conf.Extension.Anwo.Zookeeper)
 	if err != nil {
 		log.WithFields(logrus.Fields{
