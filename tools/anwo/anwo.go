@@ -15,7 +15,7 @@ import (
 	"net"
 	"net/http"
 	"net/rpc"
-	"net/url"
+	//"net/url"
 	"os"
 	"os/signal"
 	"strconv"
@@ -164,14 +164,19 @@ func readKafka() {
 		keywords := id.(string)
 		pid := conf.Extension.Anwo.Pid
 		base := conf.Extension.Anwo.Api_url
-		mac := "AABBCCDDEEFF"
+		//mac := "AABBCCDDEEFF"
 		log.WithFields(logrus.Fields{
 			"module": "adwo",
-		}).Debugln("Read AVRO record:", record)
-		url := fmt.Sprintf("%s?pid=%s&advid=%s&ip=%s&cts=%s&osv=%s&mobile=%s&idfa=%s&mac=%s&keywords=%s", base, pid, ext_map["adv_id"].(string), ip.(string), cts.(string), ext_map["os_version"].(string), url.QueryEscape(ext_map["device_model"].(string)), idfa.(string), mac, keywords)
+			"record": record.String(),
+		}).Infoln("Get 1 click event of anwo.")
+		//url := fmt.Sprintf("%s?pid=%s&advid=%s&ip=%s&cts=%s&osv=%s&mobile=%s&idfa=%s&mac=%s&keywords=%s", base, pid, ext_map["adv_id"].(string), ip.(string), cts.(string), ext_map["os_version"].(string), url.QueryEscape(ext_map["device_model"].(string)), idfa.(string), mac, keywords)
+		url := fmt.Sprintf("%s?pid=%s&advid=%s&ip=%s&cts=%s&osv=%s&idfa=%s&keywords=%s", base, pid, ext_map["adv_id"].(string), ip.(string), cts.(string), ext_map["os_version"].(string), strings.ToUpper(idfa.(string)), keywords)
 		log.WithFields(logrus.Fields{
 			"module": "adwo",
-		}).Debugln("Generated request url:", url)
+			"url":    url,
+		}).Debugln("Generated request url")
+		// mark as processed
+		consumer.CommitUpto(message)
 		go func(url string) {
 			request, err := http.NewRequest("GET", url, nil)
 			if err != nil {
@@ -308,7 +313,8 @@ func EventHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	log.WithFields(logrus.Fields{
 		"module": "adwo",
-	}).Debugln("Generated AVRO record:", record)
+		"record": record.String(),
+	}).Infoln("Recieved post back.")
 	// encode avro
 	buf := new(bytes.Buffer)
 	if err = avro.Encode(buf, record); err != nil {
@@ -319,7 +325,8 @@ func EventHandler(w http.ResponseWriter, r *http.Request) {
 	go func(url string) {
 		log.WithFields(logrus.Fields{
 			"module": "adwo",
-		}).Debugln("Send postback to adserver with request url:", url)
+			"url":    url,
+		}).Infoln("Send postback to adserver with request url.")
 
 		request, err := http.NewRequest("GET", url, nil)
 		if err != nil {
