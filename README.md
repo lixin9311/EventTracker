@@ -58,10 +58,10 @@ go get github.com/lixin9311/EventTracker/tools/importbak
 ## 接口
 ### event接口
 URL: `/event` method: `Post/Get`
-
+方法：`POST`或`GET`
 必填参数: `did`(设备id),`timestamp`(unix utc second), `event_type`(默认三类:activation, registration, order.以及其他)
 
-可选参数 `aid`(auction id),`ip`
+可选参数 `aid`(auction id),`ip`等
 
 ### CSV接口
 URL: `/`
