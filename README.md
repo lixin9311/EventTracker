@@ -12,6 +12,7 @@ go get github.com/lixin9311/EventTracker/tools/front
 go get github.com/lixin9311/EventTracker/tools/importbak
 ```
 ## 用法
+
 一般只需要指定配置文件就可以,启动参数的设置会覆盖配置文件里的设置.
 ```
     EventTracker
@@ -58,7 +59,9 @@ go get github.com/lixin9311/EventTracker/tools/importbak
 ## 接口
 ### event接口
 URL: `/event` method: `Post/Get`
+
 方法：`POST`或`GET`
+
 必填参数: `did`(设备id),`timestamp`(unix utc second), `event_type`(默认三类:activation, registration, order.以及其他)
 
 可选参数 `aid`(auction id),`ip`等
